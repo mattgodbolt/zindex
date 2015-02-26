@@ -1,6 +1,7 @@
 *.o
 /autom4te.cache
 /autoscan.log
+/compile
 /config.cache
 /config.log
 /config.log
