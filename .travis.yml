@@ -13,6 +13,6 @@ install:
   - if [ "$CXX" = "clang++" ]; then sudo apt-get install -qq --allow-unauthenticated clang-3.4; fi
   - if [ "$CXX" = "clang++" ]; then export CXX="clang++-3.4" CC="clang-3.4"; fi
 script:
-  - autoreconf -fvi
+    - autoreconf -fvi -I/usr/share/gnulib/m4
   - ./configure
   - make
