@@ -1,14 +1,14 @@
 dnl Process this file with autoconf to produce a configure script.
 AC_PREREQ(2.65)
 AC_INIT(zindex, 1.0, [matt@godbolt.org])
-AM_INIT_AUTOMAKE([foreign])
 AC_CONFIG_SRCDIR([src/zindex.cpp])
 AC_CONFIG_MACRO_DIR([scripts])
+AM_INIT_AUTOMAKE([foreign])
 
-AC_PROG_CXX
 AC_PROG_CC
-AX_CXX_COMPILE_STDCXX_11([noext])
 AX_CHECK_ZLIB
+AC_PROG_CXX
+AX_CXX_COMPILE_STDCXX_11([noext])
 
 AC_CHECK_HEADERS([stdlib.h])
 
