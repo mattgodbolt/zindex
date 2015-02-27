@@ -3,10 +3,12 @@
 /autoscan.log
 /compile
 /config.cache
+/config.guess*
 /config.log
 /config.log
 /config.status
 /config.status.lineno
+/config.sub*
 /configure
 /configure.lineno
 /configure.scan
