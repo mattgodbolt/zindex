@@ -2,6 +2,7 @@
 
 #include <zlib.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <cstring>
 #include <stdexcept>
@@ -21,10 +22,11 @@ struct Header {
     uint64_t magic;
     uint16_t version;
     uint16_t windowSize;
-    uint32_t numIndices;
+    uint32_t numAccessPoints;
+    uint64_t numIndices;
     Header()
     : magic(HeaderMagic), version(Version), windowSize(WindowSize),
-      numIndices(0) {}
+      numAccessPoints(0), numIndices(0) {}
 } __attribute((packed));
 
 struct Footer {
@@ -96,6 +98,52 @@ struct KeyValue {
     }
 };
 
+class LineIndexer {
+    std::vector<KeyValue> keyValues_;
+    uint64_t currentLineOffset_;
+    uint64_t index_;
+    uint64_t curLineLength_;
+public:
+    LineIndexer()
+    : currentLineOffset_(0), index_(1), curLineLength_(0) {}
+
+    void add(const uint8_t *data, uint64_t length, bool last) {
+        while (length) {
+            auto end = static_cast<const uint8_t *>(memchr(data, '\n', length));
+            if (end) {
+                keyValues_.emplace_back(KeyValue{index_, currentLineOffset_});
+                index_++;
+                auto extraLength = (end - data) + 1;
+                curLineLength_ += extraLength;
+                length -= extraLength;
+                data = end + 1;
+                currentLineOffset_ += curLineLength_;
+            } else {
+                curLineLength_ += length;
+                length = 0;
+            }
+        }
+        if (last)
+            keyValues_.emplace_back(KeyValue{index_, currentLineOffset_});
+    }
+
+    void output(File &out) {
+        std::sort(keyValues_.begin(), keyValues_.end());
+        auto written = ::fwrite(&keyValues_[0], sizeof(KeyValue),
+                keyValues_.size(), out.get());
+        if (written < 0) {
+            throw std::runtime_error("Error writing to file"); // todo errno
+        }
+        if (written != keyValues_.size()) {
+            throw std::runtime_error("Error writing to file: write truncated");
+        }
+    }
+
+    uint64_t size() const {
+        return keyValues_.size();
+    }
+};
+
 }
 
 struct Index::Impl {};
@@ -113,12 +161,12 @@ Index Index::build(File &&from, File &&to) {
     uint8_t input[ChunkSize];
     uint8_t window[WindowSize];
 
-    std::vector<KeyValue> keyValues;
-
     int ret = 0;
     uint64_t totalIn = 0;
     uint64_t totalOut = 0;
     uint64_t last = 0;
+    bool first = true;
+    LineIndexer indexer;
 
     do {
         zs.stream.avail_in = fread(input, 1, ChunkSize, from.get());
@@ -131,6 +179,10 @@ Index Index::build(File &&from, File &&to) {
             if (zs.stream.avail_out == 0) {
                 zs.stream.avail_out = WindowSize;
                 zs.stream.next_out = window;
+                if (!first) {
+                    indexer.add(window, WindowSize, false);
+                }
+                first = false;
             }
             totalIn += zs.stream.avail_in;
             totalOut += zs.stream.avail_out;
@@ -152,10 +204,14 @@ Index Index::build(File &&from, File &&to) {
                 AccessPoint ap(numUnusedBits, totalIn, totalOut,
                         zs.stream.avail_out, window);
                 write(to, ap);
-                header.numIndices++;
+                header.numAccessPoints++;
             }
         } while (zs.stream.avail_in);
     } while (ret != Z_STREAM_END);
+
+    indexer.add(window, WindowSize - zs.stream.avail_out, true);
+    indexer.output(to);
+    header.numIndices = indexer.size();
 
     write(to, Footer());
     seek(to, 0);
