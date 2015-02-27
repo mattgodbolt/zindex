@@ -3,6 +3,7 @@ AC_PREREQ(2.65)
 AC_INIT(zindex, 1.0, [matt@godbolt.org])
 AC_CONFIG_SRCDIR([src/zindex.cpp])
 AC_CONFIG_MACRO_DIR([scripts])
+m4_include([scripts/c++11.m4]) dnl desperation
 AM_INIT_AUTOMAKE([foreign])
 
 AC_PROG_CC
