@@ -5,6 +5,8 @@
 #include <cstdint>
 #include <cstring>
 #include <stdexcept>
+#include <tuple>
+#include <vector>
 
 namespace {
 
@@ -85,6 +87,15 @@ struct ZStream {
     ZStream &operator=(ZStream &) = delete;
 };
 
+struct KeyValue {
+    uint64_t key;
+    uint64_t value;
+
+    friend bool operator <(const KeyValue &lhs, const KeyValue & rhs) {
+        return std::tie(lhs.key, lhs.value) < std::tie(rhs.key, rhs.value);
+    }
+};
+
 }
 
 struct Index::Impl {};
@@ -101,6 +112,8 @@ Index Index::build(File &&from, File &&to) {
     ZStream zs;
     uint8_t input[ChunkSize];
     uint8_t window[WindowSize];
+
+    std::vector<KeyValue> keyValues;
 
     int ret = 0;
     uint64_t totalIn = 0;
