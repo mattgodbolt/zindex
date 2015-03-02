@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <stdexcept>
 
 LineIndexer::LineIndexer()
 : currentLineOffset_(0), index_(1), curLineLength_(0) {}
