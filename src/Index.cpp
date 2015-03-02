@@ -1,5 +1,8 @@
 #include "Index.h"
 
+#include "KeyValue.h"
+#include "LineIndexer.h"
+
 #include <zlib.h>
 
 #include <algorithm>
@@ -27,6 +30,14 @@ struct Header {
     Header()
     : magic(HeaderMagic), version(Version), windowSize(WindowSize),
       numAccessPoints(0), numIndices(0) {}
+    void throwIfBroken() const {
+        if (magic != HeaderMagic)
+            throw std::runtime_error("Invalid or corrupt index file");
+        if (version != Version)
+            throw std::runtime_error("Unsupported version of index");
+        if (windowSize != WindowSize)
+            throw std::runtime_error("Unsupported window size");
+    }
 } __attribute((packed));
 
 struct Footer {
@@ -64,6 +75,19 @@ void write(File &f, const T &obj) {
     }
 }
 
+template<typename T>
+T read(File &f) {
+    uint8_t data[sizeof(T)];
+    auto nRead = ::fread(&data, 1, sizeof(T), f.get());
+    if (nRead < 0) {
+        throw std::runtime_error("Error reading from file"); // todo errno
+    }
+    if (nRead != sizeof(T)) {
+        throw std::runtime_error("Error reading from file: truncated");
+    }
+    return *reinterpret_cast<const T *>(data);
+}
+
 void seek(File &f, uint64_t pos) {
     auto err = ::fseek(f.get(), pos, SEEK_SET);
     if (err != 0)
@@ -89,71 +113,51 @@ struct ZStream {
     ZStream &operator=(ZStream &) = delete;
 };
 
-struct KeyValue {
-    uint64_t key;
-    uint64_t value;
-
-    friend bool operator <(const KeyValue &lhs, const KeyValue & rhs) {
-        return std::tie(lhs.key, lhs.value) < std::tie(rhs.key, rhs.value);
-    }
-};
-
-class LineIndexer {
-    std::vector<KeyValue> keyValues_;
-    uint64_t currentLineOffset_;
-    uint64_t index_;
-    uint64_t curLineLength_;
-public:
-    LineIndexer()
-    : currentLineOffset_(0), index_(1), curLineLength_(0) {}
-
-    void add(const uint8_t *data, uint64_t length, bool last) {
-        while (length) {
-            auto end = static_cast<const uint8_t *>(memchr(data, '\n', length));
-            if (end) {
-                keyValues_.emplace_back(KeyValue{index_, currentLineOffset_});
-                index_++;
-                auto extraLength = (end - data) + 1;
-                curLineLength_ += extraLength;
-                length -= extraLength;
-                data = end + 1;
-                currentLineOffset_ += curLineLength_;
-            } else {
-                curLineLength_ += length;
-                length = 0;
-            }
-        }
-        if (last)
-            keyValues_.emplace_back(KeyValue{index_, currentLineOffset_});
-    }
-
-    void output(File &out) {
-        std::sort(keyValues_.begin(), keyValues_.end());
-        auto written = ::fwrite(&keyValues_[0], sizeof(KeyValue),
-                keyValues_.size(), out.get());
-        if (written < 0) {
-            throw std::runtime_error("Error writing to file"); // todo errno
-        }
-        if (written != keyValues_.size()) {
-            throw std::runtime_error("Error writing to file: write truncated");
-        }
-    }
-
-    uint64_t size() const {
-        return keyValues_.size();
-    }
-};
-
 }
 
-struct Index::Impl {};
+struct Index::Impl {
+    Header header;
+    std::vector<KeyValue> index;
+
+    Impl(const Header &h) : header(h) {}
+
+    void load(File &&from) {
+        seek(from, sizeof(Header)
+                + header.numAccessPoints * sizeof(AccessPoint));
+
+        index.resize(header.numIndices);
+        auto nRead = ::fread(&index[0], sizeof(KeyValue), header.numIndices,
+                from.get());
+        if (nRead < 0)
+            throw std::runtime_error("Error while reading index");
+
+        if (nRead != header.numIndices)
+            throw std::runtime_error("Index truncated");
+        printf("moose %d\n", header.numIndices);
+        for (auto i : index) {
+            printf("%d %d\n", i.key, i.value);
+        }
+    }
+
+    uint64_t offsetOf(uint64_t i) const {
+        auto found = std::lower_bound(index.begin(), index.end(), i,
+                [](const KeyValue &elem, uint64_t i) {
+            printf("%d %d\n", elem.key, i);
+            return elem.key < i;
+        });
+        printf("hello %d %d\n", found->key, found->value);
+        if (found->key == i) return found->value;
+        return NotFound;
+    }
+    static constexpr uint64_t NotFound = -1;
+};
 
 Index::Index() {}
 Index::~Index() {}
 Index::Index(std::unique_ptr<Impl> &&imp)
 : impl_(std::move(imp)) {}
 
-Index Index::build(File &&from, File &&to) {
+void Index::build(File &&from, File &&to) {
     Header header;
     write(to, header);
 
@@ -216,5 +220,19 @@ Index Index::build(File &&from, File &&to) {
     write(to, Footer());
     seek(to, 0);
     write(to, header);
-    return Index();
+}
+
+Index Index::load(File &&from) {
+    auto header = read<Header>(from);
+    header.throwIfBroken();
+
+    std::unique_ptr<Impl> impl(new Impl(header));
+
+    impl->load(std::move(from));
+
+    return Index(std::move(impl));
+}
+
+uint64_t Index::offsetOf(uint64_t index) const {
+    return impl_->offsetOf(index);
 }

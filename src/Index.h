@@ -2,6 +2,7 @@
 
 #include "File.h"
 
+#include <cstdint>
 #include <memory>
 
 class Index {
@@ -13,5 +14,8 @@ public:
     Index(Index &&other);
     ~Index();
 
-    static Index build(File &&from, File &&to);
+    size_t offsetOf(uint64_t index) const;
+
+    static void build(File &&from, File &&to);
+    static Index load(File &&from);
 };

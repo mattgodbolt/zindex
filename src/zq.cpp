@@ -10,27 +10,26 @@ using namespace std;
 namespace tc = TCLAP;
 
 int Main(int argc, const char *argv[]) {
-    tc::CmdLine cmd("Create indices in a compressed text file");
+    tc::CmdLine cmd("Lookup indices in a compressed text file");
     tc::UnlabeledValueArg<string> inputFile(
             "input-file",  "Read input from <file>", true, "", "<file>", cmd);
+    tc::UnlabeledMultiArg<uint64_t> query(
+            "query",  "Query for <query>", false, "<query>", cmd);
     tc::SwitchArg verbose("v", "verbose", "Be more verbose", cmd);
 
     cmd.parse(argc, argv);
 
-    File in(fopen(inputFile.getValue().c_str(), "rb"));
+    auto indexFile = inputFile.getValue() + ".zindex";
+    File in(fopen(indexFile.c_str(), "rb"));
     if (in.get() == nullptr) {
-        cerr << "could not open " << inputFile.getValue() << " for reading"
-                << endl;
+        cerr << "could not open " << indexFile << " for reading" << endl;
         return 1;
     }
+    auto index = Index::load(move(in));
 
-    auto outputFile = inputFile.getValue() + ".zindex";
-    File out(fopen(outputFile.c_str(), "wb"));
-    if (out.get() == nullptr) {
-        cerr << "could not open " << outputFile << " for reading" << endl;
-        return 1;
+    for (auto &q: query.getValue()) {
+        cout << "Index: " << q << " = " << index.offsetOf(q) << endl;
     }
-    Index::build(move(in), move(out));
 
     return 0;
 }
