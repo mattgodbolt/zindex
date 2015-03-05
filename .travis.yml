@@ -16,3 +16,4 @@ script:
   - AUTORECONF_OPTIONS="-I/usr/share/gnulib/m4" ./autogen.sh --verbose
   - ./configure
   - make
+  - make check

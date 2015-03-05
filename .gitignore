@@ -16,3 +16,6 @@
 Makefile
 Makefile.in
 core
+/test-driver
+.deps
+/ar-lib
