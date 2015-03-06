@@ -8,40 +8,58 @@
 #include <stdexcept>
 
 LineIndexer::LineIndexer()
-: currentLineOffset_(0), index_(1), curLineLength_(0) {}
+: currentLineOffset_(0), curLineLength_(0) {}
 
 void LineIndexer::add(const uint8_t *data, uint64_t length, bool last) {
     while (length) {
         auto end = static_cast<const uint8_t *>(memchr(data, '\n', length));
         if (end) {
-            keyValues_.emplace_back(KeyValue{index_, currentLineOffset_});
-            index_++;
+            auto index = lineOffsets_.size(); // todo
+            index_.emplace_back(KeyValue{index, currentLineOffset_});
+            lineOffsets_.emplace_back(currentLineOffset_);
             auto extraLength = (end - data) + 1;
-            curLineLength_ += extraLength;
+            currentLineOffset_ += curLineLength_ + extraLength;
+            curLineLength_ = 0;
             length -= extraLength;
             data = end + 1;
-            currentLineOffset_ += curLineLength_;
         } else {
             curLineLength_ += length;
             length = 0;
         }
     }
-    if (last)
-        keyValues_.emplace_back(KeyValue{index_, currentLineOffset_});
+    if (last && curLineLength_) {
+        auto index = lineOffsets_.size(); // todo
+        index_.emplace_back(KeyValue{index, currentLineOffset_});
+        lineOffsets_.emplace_back(currentLineOffset_);
+    }
 }
 
 void LineIndexer::output(File &out) {
-    std::sort(keyValues_.begin(), keyValues_.end());
-    auto written = ::fwrite(&keyValues_[0], sizeof(KeyValue),
-            keyValues_.size(), out.get());
+    auto written = ::fwrite(&lineOffsets_[0], sizeof(uint64_t),
+            lineOffsets_.size(), out.get());
     if (written < 0) {
         throw std::runtime_error("Error writing to file"); // todo errno
     }
-    if (written != keyValues_.size()) {
+    if (written != lineOffsets_.size()) {
+        throw std::runtime_error("Error writing to file: write truncated");
+    }
+
+    std::sort(index_.begin(), index_.end());
+    written = ::fwrite(&index_[0], sizeof(KeyValue),
+            index_.size(), out.get());
+    if (written < 0) {
+        throw std::runtime_error("Error writing to file"); // todo errno
+    }
+    if (written != index_.size()) {
         throw std::runtime_error("Error writing to file: write truncated");
     }
 }
 
-uint64_t LineIndexer::size() const {
-    return keyValues_.size();
+uint64_t LineIndexer::numLines() const {
+    return lineOffsets_.size();
+}
+
+uint64_t LineIndexer::indexOf(uint64_t line) const {
+    if (line >= lineOffsets_.size()) return -1;
+    return lineOffsets_[line];
 }

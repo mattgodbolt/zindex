@@ -7,9 +7,9 @@
 #include <vector>
 
 class LineIndexer {
-    std::vector<KeyValue> keyValues_;
+    std::vector<KeyValue> index_;
+    std::vector<uint64_t> lineOffsets_;
     uint64_t currentLineOffset_;
-    uint64_t index_;
     uint64_t curLineLength_;
 public:
     LineIndexer();
@@ -18,5 +18,8 @@ public:
 
     void output(File &out);
 
-    uint64_t size() const;
+    uint64_t numLines() const;
+
+    // For test:
+    uint64_t indexOf(uint64_t line) const;
 };

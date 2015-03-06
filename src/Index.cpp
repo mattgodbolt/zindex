@@ -26,10 +26,10 @@ struct Header {
     uint16_t version;
     uint16_t windowSize;
     uint32_t numAccessPoints;
-    uint64_t numIndices;
+    uint64_t numLines;
     Header()
     : magic(HeaderMagic), version(Version), windowSize(WindowSize),
-      numAccessPoints(0), numIndices(0) {}
+      numAccessPoints(0), numLines(0) {}
     void throwIfBroken() const {
         if (magic != HeaderMagic)
             throw std::runtime_error("Invalid or corrupt index file");
@@ -117,6 +117,7 @@ struct ZStream {
 
 struct Index::Impl {
     Header header;
+    std::vector<uint64_t> lines;
     std::vector<KeyValue> index;
 
     Impl(const Header &h) : header(h) {}
@@ -125,15 +126,24 @@ struct Index::Impl {
         seek(from, sizeof(Header)
                 + header.numAccessPoints * sizeof(AccessPoint));
 
-        index.resize(header.numIndices);
-        auto nRead = ::fread(&index[0], sizeof(KeyValue), header.numIndices,
+        lines.resize(header.numLines);
+        auto nRead = ::fread(&lines[0], sizeof(uint64_t), header.numLines,
                 from.get());
         if (nRead < 0)
             throw std::runtime_error("Error while reading index");
 
-        if (nRead != header.numIndices)
+        if (nRead != header.numLines)
             throw std::runtime_error("Index truncated");
-        printf("moose %d\n", header.numIndices);
+
+        index.resize(header.numLines);
+        nRead = ::fread(&index[0], sizeof(KeyValue), header.numLines,
+                from.get());
+        if (nRead < 0)
+            throw std::runtime_error("Error while reading index");
+
+        if (nRead != header.numLines)
+            throw std::runtime_error("Index truncated");
+        printf("moose %d\n", header.numLines);
         for (auto i : index) {
             printf("%d %d\n", i.key, i.value);
         }
@@ -215,7 +225,7 @@ void Index::build(File &&from, File &&to) {
 
     indexer.add(window, WindowSize - zs.stream.avail_out, true);
     indexer.output(to);
-    header.numIndices = indexer.size();
+    header.numLines = indexer.numLines();
 
     write(to, Footer());
     seek(to, 0);
