@@ -28,7 +28,7 @@ int Main(int argc, const char *argv[]) {
     auto index = Index::load(move(in));
 
     for (auto &q: query.getValue()) {
-        cout << "Index: " << q << " = " << index.offsetOf(q) << endl;
+        cout << "Index: " << q << " = " << index.lineOffset(q) << endl;
     }
 
     return 0;

@@ -14,7 +14,7 @@ public:
     Index(Index &&other);
     ~Index();
 
-    size_t offsetOf(uint64_t index) const;
+    uint64_t lineOffset(uint64_t line) const;
 
     static void build(File &&from, File &&to);
     static Index load(File &&from);

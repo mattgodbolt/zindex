@@ -2,6 +2,7 @@
 
 #include "KeyValue.h"
 #include "LineIndexer.h"
+#include "LineSink.h"
 
 #include <zlib.h>
 
@@ -113,12 +114,15 @@ struct ZStream {
     ZStream &operator=(ZStream &) = delete;
 };
 
+struct NullSink : LineSink {
+    void onLine(size_t, const char *, size_t) override {}
+};
+
 }
 
 struct Index::Impl {
     Header header;
     std::vector<uint64_t> lines;
-    std::vector<KeyValue> index;
 
     Impl(const Header &h) : header(h) {}
 
@@ -134,32 +138,7 @@ struct Index::Impl {
 
         if (nRead != header.numLines)
             throw std::runtime_error("Index truncated");
-
-        index.resize(header.numLines);
-        nRead = ::fread(&index[0], sizeof(KeyValue), header.numLines,
-                from.get());
-        if (nRead < 0)
-            throw std::runtime_error("Error while reading index");
-
-        if (nRead != header.numLines)
-            throw std::runtime_error("Index truncated");
-        printf("moose %d\n", header.numLines);
-        for (auto i : index) {
-            printf("%d %d\n", i.key, i.value);
-        }
     }
-
-    uint64_t offsetOf(uint64_t i) const {
-        auto found = std::lower_bound(index.begin(), index.end(), i,
-                [](const KeyValue &elem, uint64_t i) {
-            printf("%d %d\n", elem.key, i);
-            return elem.key < i;
-        });
-        printf("hello %d %d\n", found->key, found->value);
-        if (found->key == i) return found->value;
-        return NotFound;
-    }
-    static constexpr uint64_t NotFound = -1;
 };
 
 Index::Index() {}
@@ -180,7 +159,8 @@ void Index::build(File &&from, File &&to) {
     uint64_t totalOut = 0;
     uint64_t last = 0;
     bool first = true;
-    LineIndexer indexer;
+    NullSink sink;
+    LineIndexer indexer(sink);
 
     do {
         zs.stream.avail_in = fread(input, 1, ChunkSize, from.get());
@@ -224,8 +204,16 @@ void Index::build(File &&from, File &&to) {
     } while (ret != Z_STREAM_END);
 
     indexer.add(window, WindowSize - zs.stream.avail_out, true);
-    indexer.output(to);
-    header.numLines = indexer.numLines();
+    auto &lineOffsets = indexer.lineOffsets();
+    auto written = ::fwrite(&lineOffsets[0], sizeof(uint64_t),
+            lineOffsets.size(), to.get());
+    if (written < 0) {
+        throw std::runtime_error("Error writing to file"); // todo errno
+    }
+    if (written != lineOffsets.size()) {
+        throw std::runtime_error("Error writing to file: write truncated");
+    }
+    header.numLines = lineOffsets.size();
 
     write(to, Footer());
     seek(to, 0);
@@ -243,6 +231,7 @@ Index Index::load(File &&from) {
     return Index(std::move(impl));
 }
 
-uint64_t Index::offsetOf(uint64_t index) const {
-    return impl_->offsetOf(index);
+uint64_t Index::lineOffset(uint64_t line) const {
+    if (line > impl_->lines.size()) return -1;
+    return impl_->lines[line];
 }
