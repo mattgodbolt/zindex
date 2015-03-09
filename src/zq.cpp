@@ -1,5 +1,6 @@
 #include "File.h"
 #include "Index.h"
+#include "LineSink.h"
 
 #include <tclap/CmdLine.h>
 
@@ -8,6 +9,16 @@
 
 using namespace std;
 namespace tc = TCLAP;
+
+namespace {
+
+struct PrintSink : LineSink {
+    void onLine(size_t, const char *line, size_t length) override {
+        cout << string(line, length) << endl;
+    }
+};
+
+}
 
 int Main(int argc, const char *argv[]) {
     tc::CmdLine cmd("Lookup indices in a compressed text file");
@@ -19,16 +30,24 @@ int Main(int argc, const char *argv[]) {
 
     cmd.parse(argc, argv);
 
-    auto indexFile = inputFile.getValue() + ".zindex";
-    File in(fopen(indexFile.c_str(), "rb"));
+    auto compressedFile = inputFile.getValue();
+    File in(fopen(compressedFile.c_str(), "rb"));
     if (in.get() == nullptr) {
+        cerr << "could not open " << compressedFile << " for reading" << endl;
+        return 1;
+    }
+
+    auto indexFile = inputFile.getValue() + ".zindex";
+    File inIndex(fopen(indexFile.c_str(), "rb"));
+    if (inIndex.get() == nullptr) {
         cerr << "could not open " << indexFile << " for reading" << endl;
         return 1;
     }
-    auto index = Index::load(move(in));
+    auto index = Index::load(move(in), move(inIndex));
 
+    PrintSink sink;
     for (auto &q: query.getValue()) {
-        cout << "Index: " << q << " = " << index.lineOffset(q) << endl;
+        index.getLine(q, sink);
     }
 
     return 0;

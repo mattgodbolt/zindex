@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
+#include <iostream>
 #include <stdexcept>
 #include <tuple>
 #include <vector>
@@ -28,42 +29,47 @@ struct Header {
     uint16_t windowSize;
     uint32_t numAccessPoints;
     uint64_t numLines;
-    Header()
-    : magic(HeaderMagic), version(Version), windowSize(WindowSize),
-      numAccessPoints(0), numLines(0) {}
+    Header() :
+            magic(HeaderMagic), version(Version), windowSize(WindowSize), numAccessPoints(
+                    0), numLines(0) {
+    }
     void throwIfBroken() const {
         if (magic != HeaderMagic)
-            throw std::runtime_error("Invalid or corrupt index file");
+            throw std::runtime_error(
+                    "Invalid or corrupt index file (bad magic)");
         if (version != Version)
             throw std::runtime_error("Unsupported version of index");
         if (windowSize != WindowSize)
             throw std::runtime_error("Unsupported window size");
     }
-} __attribute((packed));
+}__attribute__((packed));
 
 struct Footer {
     uint64_t magic;
-    Footer()
-    : magic(FooterMagic) {}
-} __attribute((packed));
+    Footer() :
+            magic(FooterMagic) {
+    }
+    void throwIfBroken() const {
+        if (magic != FooterMagic)
+            throw std::runtime_error("Invalid or corrupt index file (at end)");
+    }
+}__attribute__((packed));
 
 struct AccessPoint {
-    uint64_t uncompressedOffset;
     uint64_t compressedOffset;
     uint8_t bitOffset;
     uint8_t padding[7];
     uint8_t window[WindowSize];
-    AccessPoint(uint64_t uncompressedOffset, uint64_t compressedOffset,
-            uint8_t bitOffset, uint64_t left, const uint8_t *window)
-    : uncompressedOffset(uncompressedOffset),
-      compressedOffset(compressedOffset), bitOffset(bitOffset) {
+    AccessPoint(uint64_t compressedOffset, uint8_t bitOffset, uint64_t left,
+            const uint8_t *window) :
+            compressedOffset(compressedOffset), bitOffset(bitOffset) {
         memset(padding, 0, sizeof(padding));
         if (left)
             memcpy(this->window, window + WindowSize - left, left);
         if (left < WindowSize)
             memcpy(this->window + left, window, WindowSize - left);
     }
-} __attribute((packed));
+}__attribute__((packed));
 
 template<typename T>
 void write(File &f, const T &obj) {
@@ -72,6 +78,17 @@ void write(File &f, const T &obj) {
         throw std::runtime_error("Error writing to file"); // todo errno
     }
     if (written != sizeof(obj)) {
+        throw std::runtime_error("Error writing to file: write truncated");
+    }
+}
+
+template<typename T>
+void writeArray(File &f, const T &array) {
+    auto written = ::fwrite(&array[0], sizeof(array[0]), array.size(), f.get());
+    if (written < 0) {
+        throw std::runtime_error("Error writing to file"); // todo errno
+    }
+    if (written != array.size()) {
         throw std::runtime_error("Error writing to file: write truncated");
     }
 }
@@ -89,68 +106,116 @@ T read(File &f) {
     return *reinterpret_cast<const T *>(data);
 }
 
+template<typename T>
+void readArray(File &f, uint64_t num, T &array) {
+    array.resize(num);
+    auto nRead = ::fread(&array[0], sizeof(array[0]), num, f.get());
+    if (nRead < 0)
+        throw std::runtime_error("Error while reading index");
+
+    if (nRead != num)
+        throw std::runtime_error("Error reading from file: truncated");
+}
+
 void seek(File &f, uint64_t pos) {
     auto err = ::fseek(f.get(), pos, SEEK_SET);
     if (err != 0)
         throw std::runtime_error("Error seeking in file"); // todo errno
 }
 
-struct ZlibError : std::runtime_error {
-    ZlibError(int result)
-    : std::runtime_error(std::string("Error from zlib : ") + zError(result)) {}
+struct ZlibError: std::runtime_error {
+    ZlibError(int result) :
+            std::runtime_error(
+                    std::string("Error from zlib : ") + zError(result)) {
+    }
 };
 
 struct ZStream {
     z_stream stream;
-    ZStream() {
+    enum class Type
+        : int {
+            ZlibOrGzip = 47, Raw = -15,
+    };
+    explicit ZStream(Type type) {
         memset(&stream, 0, sizeof(stream));
-        int ret = inflateInit2(&stream, 47);  // 47 is the magic value to handle zlib or gzip decoding
-        if (ret != Z_OK) throw ZlibError(ret);
+        int ret = inflateInit2(&stream, (int )type);
+        if (ret != Z_OK)
+            throw ZlibError(ret);
     }
     ~ZStream() {
-        (void)inflateEnd(&stream);
+        (void) inflateEnd(&stream);
     }
     ZStream(ZStream &) = delete;
     ZStream &operator=(ZStream &) = delete;
 };
 
-struct NullSink : LineSink {
-    void onLine(size_t, const char *, size_t) override {}
+struct NullSink: LineSink {
+    void onLine(size_t, const char *, size_t) override {
+    }
 };
 
 }
 
 struct Index::Impl {
     Header header;
+    File compressed;
+    File index;
+    std::vector<uint64_t> uncompressedOffsets;
     std::vector<uint64_t> lines;
 
-    Impl(const Header &h) : header(h) {}
+    Impl(const Header &h, File &&fromCompressed, File &&fromIndex)
+    : header(h), compressed(std::move(fromCompressed)),
+      index(std::move(fromIndex)) {
+        seek(index,
+                sizeof(Header) + header.numAccessPoints * sizeof(AccessPoint));
 
-    void load(File &&from) {
-        seek(from, sizeof(Header)
-                + header.numAccessPoints * sizeof(AccessPoint));
+        readArray(index, header.numAccessPoints, uncompressedOffsets);
+        readArray(index, header.numLines, lines);
+        read<Footer>(index).throwIfBroken();
+    }
 
-        lines.resize(header.numLines);
-        auto nRead = ::fread(&lines[0], sizeof(uint64_t), header.numLines,
-                from.get());
-        if (nRead < 0)
-            throw std::runtime_error("Error while reading index");
+    uint32_t accessPointFor(uint64_t offset) const {
+        auto it = std::lower_bound(uncompressedOffsets.begin(),
+                uncompressedOffsets.end(), offset);
+        if (it == uncompressedOffsets.end())
+            return -1;
+        if (*it > offset && it != uncompressedOffsets.begin())
+            --it;
+        return it - uncompressedOffsets.begin();
+    }
 
-        if (nRead != header.numLines)
-            throw std::runtime_error("Index truncated");
+    void getLine(uint64_t line, LineSink &sink) {
+        if (line >= lines.size())
+            return;
+        auto offset = lines[line];
+        auto apNum = accessPointFor(offset);
+        std::cout << "AP for " << offset << " = " << apNum << std::endl;
+
+        seek(index, sizeof(Header) + apNum * sizeof(AccessPoint));
+        auto accessPoint = read<AccessPoint>(index);
+        std::cout << "got: " << accessPoint.compressedOffset << std::endl;
+
+        ZStream zs(ZStream::Type::Raw);
+        uint8_t input[ChunkSize];
+        uint8_t window[WindowSize];
+
+        seek(compressed, offset);
     }
 };
 
-Index::Index() {}
-Index::~Index() {}
-Index::Index(std::unique_ptr<Impl> &&imp)
-: impl_(std::move(imp)) {}
+Index::Index() {
+}
+Index::~Index() {
+}
+Index::Index(std::unique_ptr<Impl> &&imp) :
+        impl_(std::move(imp)) {
+}
 
 void Index::build(File &&from, File &&to) {
     Header header;
     write(to, header);
 
-    ZStream zs;
+    ZStream zs(ZStream::Type::ZlibOrGzip);
     uint8_t input[ChunkSize];
     uint8_t window[WindowSize];
 
@@ -161,6 +226,7 @@ void Index::build(File &&from, File &&to) {
     bool first = true;
     NullSink sink;
     LineIndexer indexer(sink);
+    std::vector<uint64_t> uncompressedOffsets;
 
     do {
         zs.stream.avail_in = fread(input, 1, ChunkSize, from.get());
@@ -195,8 +261,10 @@ void Index::build(File &&from, File &&to) {
             bool lastBlockInStream = zs.stream.data_type & 0x40;
             if (endOfBlock && !lastBlockInStream && needsIndex) {
                 auto numUnusedBits = zs.stream.data_type & 0x7;
-                AccessPoint ap(numUnusedBits, totalIn, totalOut,
-                        zs.stream.avail_out, window);
+                AccessPoint ap(totalIn, numUnusedBits, zs.stream.avail_out,
+                        window);
+                uncompressedOffsets.emplace_back(totalOut);
+                std::cout << "moo = " << ap.compressedOffset << std::endl;
                 write(to, ap);
                 header.numAccessPoints++;
             }
@@ -204,15 +272,9 @@ void Index::build(File &&from, File &&to) {
     } while (ret != Z_STREAM_END);
 
     indexer.add(window, WindowSize - zs.stream.avail_out, true);
-    auto &lineOffsets = indexer.lineOffsets();
-    auto written = ::fwrite(&lineOffsets[0], sizeof(uint64_t),
-            lineOffsets.size(), to.get());
-    if (written < 0) {
-        throw std::runtime_error("Error writing to file"); // todo errno
-    }
-    if (written != lineOffsets.size()) {
-        throw std::runtime_error("Error writing to file: write truncated");
-    }
+    writeArray(to, uncompressedOffsets);
+    const auto &lineOffsets = indexer.lineOffsets();
+    writeArray(to, lineOffsets);
     header.numLines = lineOffsets.size();
 
     write(to, Footer());
@@ -220,18 +282,22 @@ void Index::build(File &&from, File &&to) {
     write(to, header);
 }
 
-Index Index::load(File &&from) {
-    auto header = read<Header>(from);
+Index Index::load(File &&fromCompressed, File &&fromIndex) {
+    auto header = read<Header>(fromIndex);
     header.throwIfBroken();
 
-    std::unique_ptr<Impl> impl(new Impl(header));
-
-    impl->load(std::move(from));
+    std::unique_ptr<Impl> impl(new Impl(header, std::move(fromCompressed),
+            std::move(fromIndex)));
 
     return Index(std::move(impl));
 }
 
 uint64_t Index::lineOffset(uint64_t line) const {
-    if (line > impl_->lines.size()) return -1;
+    if (line >= impl_->lines.size())
+        return -1;
     return impl_->lines[line];
+}
+
+void Index::getLine(uint64_t line, LineSink &sink) {
+    impl_->getLine(line, sink);
 }
