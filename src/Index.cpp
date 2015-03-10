@@ -189,11 +189,9 @@ struct Index::Impl {
             return;
         auto offset = lines[line];
         auto apNum = accessPointFor(offset);
-        std::cout << "AP for " << offset << " = " << apNum << std::endl;
 
         seek(index, sizeof(Header) + apNum * sizeof(AccessPoint));
         auto accessPoint = read<AccessPoint>(index);
-        std::cout << "got: " << accessPoint.compressedOffset << std::endl;
 
         ZStream zs(ZStream::Type::Raw);
         uint8_t input[ChunkSize];
@@ -264,7 +262,6 @@ void Index::build(File &&from, File &&to) {
                 AccessPoint ap(totalIn, numUnusedBits, zs.stream.avail_out,
                         window);
                 uncompressedOffsets.emplace_back(totalOut);
-                std::cout << "moo = " << ap.compressedOffset << std::endl;
                 write(to, ap);
                 header.numAccessPoints++;
             }
