@@ -13,8 +13,8 @@ namespace tc = TCLAP;
 namespace {
 
 struct PrintSink : LineSink {
-    void onLine(size_t, const char *line, size_t length) override {
-        cout << string(line, length) << endl;
+    void onLine(size_t l, size_t, const char *line, size_t length) override {
+        cout << l << ":" << string(line, length) << endl;
     }
 };
 

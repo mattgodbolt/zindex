@@ -28,10 +28,10 @@ struct Header {
     uint16_t version;
     uint16_t windowSize;
     uint32_t numAccessPoints;
-    uint64_t numLines;
-    Header() :
-            magic(HeaderMagic), version(Version), windowSize(WindowSize), numAccessPoints(
-                    0), numLines(0) {
+    uint64_t numLinesPlusOne;
+    Header()
+    : magic(HeaderMagic), version(Version), windowSize(WindowSize),
+      numAccessPoints(0), numLinesPlusOne(0) {
     }
     void throwIfBroken() const {
         if (magic != HeaderMagic)
@@ -150,7 +150,7 @@ struct ZStream {
 };
 
 struct NullSink: LineSink {
-    void onLine(size_t, const char *, size_t) override {
+    void onLine(size_t, size_t, const char *, size_t) override {
     }
 };
 
@@ -170,7 +170,7 @@ struct Index::Impl {
                 sizeof(Header) + header.numAccessPoints * sizeof(AccessPoint));
 
         readArray(index, header.numAccessPoints, uncompressedOffsets);
-        readArray(index, header.numLines, lines);
+        readArray(index, header.numLinesPlusOne, lines);
         read<Footer>(index).throwIfBroken();
     }
 
@@ -185,19 +185,38 @@ struct Index::Impl {
     }
 
     void getLine(uint64_t line, LineSink &sink) {
+        // Line is 1-based, lines is zero-based. lines also contains an extra
+        // entry at the end of the file.
         if (line >= lines.size())
             return;
-        auto offset = lines[line];
+        if (line == 0) return;
+        auto offset = lines[line - 1];
+        auto length = lines[line] - offset;
         auto apNum = accessPointFor(offset);
 
         seek(index, sizeof(Header) + apNum * sizeof(AccessPoint));
-        auto accessPoint = read<AccessPoint>(index);
+        auto ap = read<AccessPoint>(index);
 
         ZStream zs(ZStream::Type::Raw);
         uint8_t input[ChunkSize];
         uint8_t window[WindowSize];
 
-        seek(compressed, offset);
+        std::cout << "ap " << apNum << " at offset " << ap.compressedOffset << " with unc lenth " << length << std::endl;
+
+        seek(compressed, ap.bitOffset ? ap.compressedOffset - 1 : ap.compressedOffset);
+        if (ap.bitOffset) {
+            auto c = fgetc(compressed.get());
+            std::cout << " at " << offset << " - " << +c << std::endl;
+            if (c == -1)
+                throw ZlibError(ferror(compressed.get()) ?
+                        Z_ERRNO : Z_DATA_ERROR);
+            auto ret = inflatePrime(
+                    &zs.stream, ap.bitOffset, c >> (8 - ap.bitOffset));
+            if (ret != Z_OK) throw ZlibError(ret);
+        }
+        auto ret = inflateSetDictionary(&zs.stream, ap.window,
+                WindowSize);
+        if (ret != Z_OK) throw ZlibError(ret);
     }
 };
 
@@ -261,6 +280,7 @@ void Index::build(File &&from, File &&to) {
                 auto numUnusedBits = zs.stream.data_type & 0x7;
                 AccessPoint ap(totalIn, numUnusedBits, zs.stream.avail_out,
                         window);
+                std::cout << totalIn << std::endl;
                 uncompressedOffsets.emplace_back(totalOut);
                 write(to, ap);
                 header.numAccessPoints++;
@@ -272,7 +292,7 @@ void Index::build(File &&from, File &&to) {
     writeArray(to, uncompressedOffsets);
     const auto &lineOffsets = indexer.lineOffsets();
     writeArray(to, lineOffsets);
-    header.numLines = lineOffsets.size();
+    header.numLinesPlusOne = lineOffsets.size();
 
     write(to, Footer());
     seek(to, 0);

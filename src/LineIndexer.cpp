@@ -22,16 +22,18 @@ void LineIndexer::add(const uint8_t *data, uint64_t length, bool last) {
     }
     if (last && !lineBuffer_.empty())
         lineData(nullptr, nullptr);
+    if (last)
+        lineOffsets_.emplace_back(currentLineOffset_);
 }
 
 uint64_t LineIndexer::lineData(const uint8_t *begin, const uint8_t *end) {
     lineOffsets_.emplace_back(currentLineOffset_);
     if (lineBuffer_.empty()) {
-        sink_.onLine(currentLineOffset_,
+        sink_.onLine(lineOffsets_.size(), currentLineOffset_,
                 reinterpret_cast<const char *>(begin), end - begin);
     } else {
         std::copy(begin, end, std::back_inserter(lineBuffer_));
-        sink_.onLine(currentLineOffset_,
+        sink_.onLine(lineOffsets_.size(), currentLineOffset_,
                 &lineBuffer_[0], lineBuffer_.size());
     }
     auto extraLength = (end - begin) + 1;
