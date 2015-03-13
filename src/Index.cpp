@@ -208,7 +208,7 @@ struct Index::Impl {
 
         ZStream zs(ZStream::Type::Raw);
         uint8_t input[ChunkSize];
-        uint8_t window[WindowSize];
+        uint8_t discardBuffer[WindowSize];
 
         std::cout << "ap " << apNum << " at offset " << ap.compressedOffset << " with unc lenth " << length << std::endl;
 
@@ -226,6 +226,41 @@ struct Index::Impl {
         auto ret = inflateSetDictionary(&zs.stream, ap.window,
                 WindowSize);
         if (ret != Z_OK) throw ZlibError(ret);
+
+        uint8_t lineBuf[length];
+        auto numToSkip = offset - uncompressedOffsets[apNum];
+        bool skipping = true;
+        if (zs.stream.avail_in != 0) std::cout << "monkey" << std::endl;
+        zs.stream.avail_in = 0;
+        do {
+            if (numToSkip == 0 && skipping) {
+                zs.stream.avail_out = length;
+                zs.stream.next_out = lineBuf;
+                skipping = false;
+            }
+            if (numToSkip > WindowSize) {
+                zs.stream.avail_out = WindowSize;
+                zs.stream.next_out = discardBuffer;
+                numToSkip -= WindowSize;
+            } else if (numToSkip) {
+                zs.stream.avail_out = (uInt) numToSkip;
+                zs.stream.next_out = discardBuffer;
+                numToSkip = 0;
+            }
+            do {
+                if (zs.stream.avail_in == 0) {
+                    zs.stream.avail_in = ::fread(input, 1, sizeof(input), compressed.get());
+                    if (ferror(compressed.get())) throw ZlibError(Z_ERRNO);
+                    if (zs.stream.avail_in == 0) throw ZlibError(Z_DATA_ERROR);
+                    zs.stream.next_in = input;
+                }
+                auto ret = inflate(&zs.stream, Z_NO_FLUSH);
+                if (ret == Z_NEED_DICT) throw ZlibError(Z_DATA_ERROR);
+                if (ret == Z_MEM_ERROR || ret == Z_DATA_ERROR) throw ZlibError(ret);
+                if (ret == Z_STREAM_END) break;
+            } while (zs.stream.avail_out);
+        } while (skipping);
+        sink.onLine(line, offset, reinterpret_cast<const char *>(lineBuf), length);
     }
 };
 
