@@ -2,42 +2,19 @@ cmake_minimum_required(VERSION 2.8.4)
 project(zindex)
 
 find_package(ZLIB REQUIRED)
-include_directories(${ZLIB_INCLUDE_DIRS} src)
+include_directories(${ZLIB_INCLUDE_DIRS} ext src)
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
 
 set(SOURCE_FILES
-    src/tclap/Arg.h
-    src/tclap/ArgException.h
-    src/tclap/ArgTraits.h
-    src/tclap/CmdLine.h
-    src/tclap/CmdLineInterface.h
-    src/tclap/CmdLineOutput.h
-    src/tclap/Constraint.h
-    src/tclap/DocBookOutput.h
-    src/tclap/HelpVisitor.h
-    src/tclap/IgnoreRestVisitor.h
-    src/tclap/MultiArg.h
-    src/tclap/MultiSwitchArg.h
-    src/tclap/OptionalUnlabeledTracker.h
-    src/tclap/StandardTraits.h
-    src/tclap/StdOutput.h
-    src/tclap/SwitchArg.h
-    src/tclap/UnlabeledMultiArg.h
-    src/tclap/UnlabeledValueArg.h
-    src/tclap/ValueArg.h
-    src/tclap/ValuesConstraint.h
-    src/tclap/VersionVisitor.h
-    src/tclap/Visitor.h
-    src/tclap/XorHandler.h
-    src/tclap/ZshCompletionOutput.h
     src/File.h
     src/Index.cpp
     src/Index.h
     src/KeyValue.h
     src/LineIndexer.cpp
     src/LineIndexer.h
-    src/LineSink.h)
+    src/LineSink.h
+    ext/sqlite/sqlite3.c)
 
 set(TEST_FILES
     tests/catch.hpp
