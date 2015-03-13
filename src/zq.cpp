@@ -7,7 +7,7 @@
 #include <iostream>
 
 using namespace std;
-namespace tc = TCLAP;
+using namespace TCLAP;
 
 namespace {
 
@@ -20,12 +20,12 @@ struct PrintSink : LineSink {
 }
 
 int Main(int argc, const char *argv[]) {
-    tc::CmdLine cmd("Lookup indices in a compressed text file");
-    tc::UnlabeledValueArg<string> inputFile(
-            "input-file",  "Read input from <file>", true, "", "<file>", cmd);
-    tc::UnlabeledMultiArg<uint64_t> query(
-            "query",  "Query for <query>", false, "<query>", cmd);
-    tc::SwitchArg verbose("v", "verbose", "Be more verbose", cmd);
+    CmdLine cmd("Lookup indices in a compressed text file");
+    UnlabeledValueArg<string> inputFile(
+            "input-file", "Read input from <file>", true, "", "<file>", cmd);
+    UnlabeledMultiArg<uint64_t> query(
+            "query", "Query for <query>", false, "<query>", cmd);
+    SwitchArg verbose("v", "verbose", "Be more verbose", cmd);
 
     cmd.parse(argc, argv);
 

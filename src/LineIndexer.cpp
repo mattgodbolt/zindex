@@ -7,7 +7,8 @@
 #include <stdexcept>
 
 LineIndexer::LineIndexer(LineSink &sink)
-: sink_(sink), currentLineOffset_(0) {}
+        : sink_(sink), currentLineOffset_(0) {
+}
 
 void LineIndexer::add(const uint8_t *data, uint64_t length, bool last) {
     while (length) {

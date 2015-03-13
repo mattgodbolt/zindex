@@ -7,13 +7,13 @@
 #include <iostream>
 
 using namespace std;
-namespace tc = TCLAP;
+using namespace TCLAP;
 
 int Main(int argc, const char *argv[]) {
-    tc::CmdLine cmd("Create indices in a compressed text file");
-    tc::UnlabeledValueArg<string> inputFile(
-            "input-file",  "Read input from <file>", true, "", "<file>", cmd);
-    tc::SwitchArg verbose("v", "verbose", "Be more verbose", cmd);
+    CmdLine cmd("Create indices in a compressed text file");
+    UnlabeledValueArg<string> inputFile(
+            "input-file", "Read input from <file>", true, "", "<file>", cmd);
+    SwitchArg verbose("v", "verbose", "Be more verbose", cmd);
 
     cmd.parse(argc, argv);
 

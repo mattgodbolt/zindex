@@ -18,7 +18,9 @@ struct RecordingSink : LineSink {
         fileOffsets.emplace_back(offset);
     }
 
-    bool empty() const { return lines.empty(); }
+    bool empty() const {
+        return lines.empty();
+    }
 };
 
 }

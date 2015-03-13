@@ -29,10 +29,12 @@ struct Header {
     uint16_t windowSize;
     uint32_t numAccessPoints;
     uint64_t numLinesPlusOne;
+
     Header()
-    : magic(HeaderMagic), version(Version), windowSize(WindowSize),
-      numAccessPoints(0), numLinesPlusOne(0) {
+            : magic(HeaderMagic), version(Version), windowSize(WindowSize),
+              numAccessPoints(0), numLinesPlusOne(0) {
     }
+
     void throwIfBroken() const {
         if (magic != HeaderMagic)
             throw std::runtime_error(
@@ -46,9 +48,11 @@ struct Header {
 
 struct Footer {
     uint64_t magic;
+
     Footer() :
             magic(FooterMagic) {
     }
+
     void throwIfBroken() const {
         if (magic != FooterMagic)
             throw std::runtime_error("Invalid or corrupt index file (at end)");
@@ -60,6 +64,7 @@ struct AccessPoint {
     uint8_t bitOffset;
     uint8_t padding[7];
     uint8_t window[WindowSize];
+
     AccessPoint(uint64_t compressedOffset, uint8_t bitOffset, uint64_t left,
             const uint8_t *window) :
             compressedOffset(compressedOffset), bitOffset(bitOffset) {
@@ -123,7 +128,7 @@ void seek(File &f, uint64_t pos) {
         throw std::runtime_error("Error seeking in file"); // todo errno
 }
 
-struct ZlibError: std::runtime_error {
+struct ZlibError : std::runtime_error {
     ZlibError(int result) :
             std::runtime_error(
                     std::string("Error from zlib : ") + zError(result)) {
@@ -133,23 +138,27 @@ struct ZlibError: std::runtime_error {
 struct ZStream {
     z_stream stream;
     enum class Type
-        : int {
-            ZlibOrGzip = 47, Raw = -15,
+            : int {
+        ZlibOrGzip = 47, Raw = -15,
     };
+
     explicit ZStream(Type type) {
         memset(&stream, 0, sizeof(stream));
-        int ret = inflateInit2(&stream, (int )type);
+        int ret = inflateInit2(&stream, (int) type);
         if (ret != Z_OK)
             throw ZlibError(ret);
     }
+
     ~ZStream() {
         (void) inflateEnd(&stream);
     }
+
     ZStream(ZStream &) = delete;
+
     ZStream &operator=(ZStream &) = delete;
 };
 
-struct NullSink: LineSink {
+struct NullSink : LineSink {
     void onLine(size_t, size_t, const char *, size_t) override {
     }
 };
@@ -164,8 +173,8 @@ struct Index::Impl {
     std::vector<uint64_t> lines;
 
     Impl(const Header &h, File &&fromCompressed, File &&fromIndex)
-    : header(h), compressed(std::move(fromCompressed)),
-      index(std::move(fromIndex)) {
+            : header(h), compressed(std::move(fromCompressed)),
+              index(std::move(fromIndex)) {
         seek(index,
                 sizeof(Header) + header.numAccessPoints * sizeof(AccessPoint));
 
@@ -222,8 +231,10 @@ struct Index::Impl {
 
 Index::Index() {
 }
+
 Index::~Index() {
 }
+
 Index::Index(std::unique_ptr<Impl> &&imp) :
         impl_(std::move(imp)) {
 }
