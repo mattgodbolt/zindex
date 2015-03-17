@@ -79,6 +79,23 @@ TEST_CASE("indexes lines", "[LineIndexer]") {
             REQUIRE(sink.fileOffsets[0] == 0);
             REQUIRE(sink.fileOffsets[1] == 4);
         }
+        SECTION("3 bytes at a time") {
+            for (auto i = 0u; i < sizeof(oneTwo) - 1; i += 3) {
+                int remaining = sizeof(oneTwo) - 1 - i;
+                auto length = remaining < 3 ? remaining : 3;
+                indexer.add(oneTwo + i, length, remaining <= 3);
+            }
+            const auto &lo = indexer.lineOffsets();
+            REQUIRE(lo.size() == 3);
+            REQUIRE(lo[0] == 0);
+            REQUIRE(lo[1] == 4);
+            REQUIRE(lo[2] == 8);
+            REQUIRE(sink.lines.size() == 2);
+            REQUIRE(sink.lines[0] == "One");
+            REQUIRE(sink.lines[1] == "Two");
+            REQUIRE(sink.fileOffsets[0] == 0);
+            REQUIRE(sink.fileOffsets[1] == 4);
+        }
         SECTION("in one go missing newline") {
             indexer.add(oneTwo, sizeof(oneTwo) - 2, true);
             const auto &lo = indexer.lineOffsets();

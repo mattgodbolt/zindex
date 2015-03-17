@@ -210,8 +210,6 @@ struct Index::Impl {
         uint8_t input[ChunkSize];
         uint8_t discardBuffer[WindowSize];
 
-        std::cout << "ap " << apNum << " at offset " << ap.compressedOffset << " with unc lenth " << length << std::endl;
-
         seek(compressed, ap.bitOffset ? ap.compressedOffset - 1 : ap.compressedOffset);
         if (ap.bitOffset) {
             auto c = fgetc(compressed.get());
@@ -230,7 +228,6 @@ struct Index::Impl {
         uint8_t lineBuf[length];
         auto numToSkip = offset - uncompressedOffsets[apNum];
         bool skipping = true;
-        if (zs.stream.avail_in != 0) std::cout << "monkey" << std::endl;
         zs.stream.avail_in = 0;
         do {
             if (numToSkip == 0 && skipping) {
@@ -260,7 +257,8 @@ struct Index::Impl {
                 if (ret == Z_STREAM_END) break;
             } while (zs.stream.avail_out);
         } while (skipping);
-        sink.onLine(line, offset, reinterpret_cast<const char *>(lineBuf), length);
+        sink.onLine(line, offset, reinterpret_cast<const char *>(lineBuf),
+                length - 1);
     }
 };
 
@@ -326,7 +324,6 @@ void Index::build(File &&from, File &&to) {
                 auto numUnusedBits = zs.stream.data_type & 0x7;
                 AccessPoint ap(totalIn, numUnusedBits, zs.stream.avail_out,
                         window);
-                std::cout << totalIn << std::endl;
                 uncompressedOffsets.emplace_back(totalOut);
                 write(to, ap);
                 header.numAccessPoints++;

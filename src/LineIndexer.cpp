@@ -11,14 +11,15 @@ LineIndexer::LineIndexer(LineSink &sink)
 }
 
 void LineIndexer::add(const uint8_t *data, uint64_t length, bool last) {
-    while (length) {
-        auto end = static_cast<const uint8_t *>(memchr(data, '\n', length));
-        if (end) {
-            length -= lineData(data, end);
-            data = end + 1;
+    auto endData = data + length;
+    while (data < endData) {
+        auto lineEnd = static_cast<const uint8_t *>(memchr(data, '\n', endData - data));
+        if (lineEnd) {
+            lineData(data, lineEnd);
+            data = lineEnd + 1;
         } else {
-            std::copy(data, data + length, std::back_inserter(lineBuffer_));
-            length = 0;
+            std::copy(data, endData, std::back_inserter(lineBuffer_));
+            break;
         }
     }
     if (last && !lineBuffer_.empty())
@@ -27,18 +28,19 @@ void LineIndexer::add(const uint8_t *data, uint64_t length, bool last) {
         lineOffsets_.emplace_back(currentLineOffset_);
 }
 
-uint64_t LineIndexer::lineData(const uint8_t *begin, const uint8_t *end) {
+void LineIndexer::lineData(const uint8_t *begin, const uint8_t *end) {
     lineOffsets_.emplace_back(currentLineOffset_);
+    uint64_t length;
     if (lineBuffer_.empty()) {
         sink_.onLine(lineOffsets_.size(), currentLineOffset_,
                 reinterpret_cast<const char *>(begin), end - begin);
+        length = (end - begin) + 1;
     } else {
         std::copy(begin, end, std::back_inserter(lineBuffer_));
         sink_.onLine(lineOffsets_.size(), currentLineOffset_,
                 &lineBuffer_[0], lineBuffer_.size());
+        length = lineBuffer_.size() + 1;
+        lineBuffer_.clear();
     }
-    auto extraLength = (end - begin) + 1;
-    currentLineOffset_ += lineBuffer_.size() + extraLength;
-    lineBuffer_.clear();
-    return extraLength;
+    currentLineOffset_ += length;
 }

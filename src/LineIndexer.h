@@ -20,5 +20,5 @@ public:
     }
 
 private:
-    uint64_t lineData(const uint8_t *begin, const uint8_t *end);
+    void lineData(const uint8_t *begin, const uint8_t *end);
 };
