@@ -22,7 +22,7 @@ set(TEST_FILES
     tests/LineIndexerTest.cpp
     tests/test_main.cpp)
 
-add_library(libzindex ${SOURCE_FILES})
+add_library(libzindex ${SOURCE_FILES} src/SqliteError.h)
 
 add_executable(zindex src/zindex.cpp)
 target_link_libraries(zindex libzindex ${ZLIB_LIBRARIES} dl)
