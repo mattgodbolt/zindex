@@ -14,7 +14,9 @@ set(SOURCE_FILES
     src/LineIndexer.cpp
     src/LineIndexer.h
     src/LineSink.h
-    src/Sqlite.cpp src/Sqlite.h
+    src/Sqlite.cpp
+    src/Sqlite.h
+    src/SqliteError.h
     ext/sqlite/sqlite3.c)
 
 set(TEST_FILES
@@ -22,7 +24,7 @@ set(TEST_FILES
     tests/LineIndexerTest.cpp
     tests/test_main.cpp)
 
-add_library(libzindex ${SOURCE_FILES} src/SqliteError.h)
+add_library(libzindex ${SOURCE_FILES})
 
 add_executable(zindex src/zindex.cpp)
 target_link_libraries(zindex libzindex ${ZLIB_LIBRARIES} dl)
