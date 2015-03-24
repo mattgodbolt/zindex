@@ -115,3 +115,40 @@ TEST_CASE("executes statements", "[Sqlite]") {
     }
     REQUIRE(num == 2);
 }
+
+TEST_CASE("handles binds and blobs", "[Sqlite]") {
+    TempDir tempDir;
+    Sqlite sqlite;
+    auto dbPath = tempDir.path + "/db.sqlite";
+    sqlite.open(dbPath, false);
+
+    REQUIRE(sqlite.prepare("create table t(offset integer, data blob)").step() == true);
+    auto inserter = sqlite.prepare("insert into t values(:id, :data)");
+    inserter.bindInt64(":id", 1234);
+    constexpr auto byteLen = 1024;
+    char bytes[byteLen];
+    for (int i = 0; i < byteLen; ++i) bytes[i] = i & 0xff;
+    inserter.bindBlob(":data", bytes, byteLen);
+    REQUIRE(inserter.step() == true);
+    inserter.reset();
+    inserter.bindInt64(":id", 5678);
+    for (int i = 0; i < byteLen; ++i) bytes[i] = (i & 0xff) ^ 0xff;
+    inserter.bindBlob(":data", bytes, byteLen);
+    REQUIRE(inserter.step() == true);
+
+    auto select = sqlite.prepare("select * from t order by offset");
+    REQUIRE(select.columnCount() == 2);
+    REQUIRE(select.step() == false);
+    REQUIRE(select.columnName(0) == "offset");
+    REQUIRE(select.columnName(1) == "data");
+    REQUIRE(select.columnInt64(0) == 1234);
+    auto blob1 = select.columnBlob(1);
+    REQUIRE(blob1.size() == byteLen);
+    for (int i = 0; i < byteLen; ++i) REQUIRE(blob1[i] == (i & 0xff));
+    REQUIRE(select.step() == false);
+    REQUIRE(select.columnInt64(0) == 5678);
+    auto blob2 = select.columnBlob(1);
+    REQUIRE(blob2.size() == byteLen);
+    for (int i = 0; i < byteLen; ++i) REQUIRE(blob2[i] == (0xff ^ (i & 0xff)));
+    REQUIRE(select.step() == true);
+}

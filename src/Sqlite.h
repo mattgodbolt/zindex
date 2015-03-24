@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <string>
 #include <sqlite3.h>
+#include <vector>
 
 class Sqlite {
     sqlite3 *sql_;
@@ -23,7 +24,9 @@ public:
         }
 
         void destroy();
+
         friend class Sqlite;
+
     public:
         ~Statement() {
             destroy();
@@ -35,12 +38,20 @@ public:
         Statement &operator=(Statement &&other);
 
         void reset();
-        void bind();
+        void bindInt64(const std::string &param, int64_t data);
+        void bindBlob(const std::string &param, const void *data, size_t length);
+
         bool step();
+
         int columnCount() const;
+        std::string columnName(int index) const;
+
         int64_t columnInt64(int index) const;
         std::string columnString(int index) const;
-        std::string columnName(int index) const;
+        std::vector<uint8_t> columnBlob(int index) const;
+
+    private:
+        int P(const std::string &param) const;
     };
 
     Statement prepare(const std::string &sql) const;

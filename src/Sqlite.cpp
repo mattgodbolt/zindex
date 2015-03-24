@@ -3,6 +3,7 @@
 #include <iostream>
 #include "Sqlite.h"
 #include "SqliteError.h"
+#include <cstring>
 
 namespace {
 
@@ -75,7 +76,12 @@ bool Sqlite::Statement::step() {
     throw SqliteError(res);
 }
 
-void Sqlite::Statement::bind() {
+void Sqlite::Statement::bindBlob(const std::string &param, const void *data, size_t length) {
+    R(sqlite3_bind_blob(statement_, P(param), data, length, SQLITE_TRANSIENT));
+}
+
+void Sqlite::Statement::bindInt64(const std::string &param, int64_t data) {
+    R(sqlite3_bind_int64(statement_, P(param), data));
 }
 
 int64_t Sqlite::Statement::columnInt64(int index) const {
@@ -92,4 +98,17 @@ int Sqlite::Statement::columnCount() const {
 
 std::string Sqlite::Statement::columnName(int index) const {
     return sqlite3_column_name(statement_, index);
+}
+
+int Sqlite::Statement::P(const std::string &param) const {
+    auto index = sqlite3_bind_parameter_index(statement_, param.c_str());
+    if (index == 0) throw std::runtime_error("Unable to find bound parameter '" + param + "'");
+    return index;
+}
+
+std::vector<uint8_t> Sqlite::Statement::columnBlob(int index) const {
+    auto ptr = sqlite3_column_blob(statement_, index);
+    std::vector<uint8_t> data(sqlite3_column_bytes(statement_, index));
+    std::memcpy(&data[0], ptr, data.size());
+    return data;
 }
