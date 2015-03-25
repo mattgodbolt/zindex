@@ -25,12 +25,7 @@ int Main(int argc, const char *argv[]) {
     }
 
     auto outputFile = inputFile.getValue() + ".zindex";
-    File out(fopen(outputFile.c_str(), "wb"));
-    if (out.get() == nullptr) {
-        cerr << "could not open " << outputFile << " for reading" << endl;
-        return 1;
-    }
-    Index::build(move(in), move(out));
+    Index::build(move(in), outputFile.c_str());
 
     return 0;
 }

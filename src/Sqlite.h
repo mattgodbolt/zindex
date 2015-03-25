@@ -13,6 +13,15 @@ public:
     ~Sqlite();
     Sqlite(const Sqlite &) = delete;
     Sqlite &operator=(const Sqlite &) = delete;
+    Sqlite(Sqlite &&other) : sql_(other.sql_) { other.sql_ = nullptr; }
+    Sqlite &operator=(Sqlite &&other) {
+        if (this != &other) {
+            close();
+            sql_ = other.sql_;
+            other.sql_ = nullptr;
+        }
+        return *this;
+    }
 
     void open(const std::string &filename, bool readOnly);
     void close();
@@ -55,4 +64,5 @@ public:
     };
 
     Statement prepare(const std::string &sql) const;
+    void exec(const std::string &sql);
 };

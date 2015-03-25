@@ -112,3 +112,7 @@ std::vector<uint8_t> Sqlite::Statement::columnBlob(int index) const {
     std::memcpy(&data[0], ptr, data.size());
     return data;
 }
+
+void Sqlite::exec(const std::string &sql) {
+    R(sqlite3_exec(sql_, sql.c_str(), nullptr, nullptr, nullptr));
+}

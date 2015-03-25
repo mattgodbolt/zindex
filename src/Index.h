@@ -19,8 +19,7 @@ public:
     Index(Index &&other);
     ~Index();
 
-    uint64_t lineOffset(uint64_t line) const;
     void getLine(uint64_t line, LineSink &sink);
-    static void build(File &&from, File &&to);
-    static Index load(File &&fromCompressed, File &&fromIndex);
+    static void build(File &&from, const char *indexFilename);
+    static Index load(File &&fromCompressed, const char *indexFilename);
 };

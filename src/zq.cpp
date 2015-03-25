@@ -37,12 +37,7 @@ int Main(int argc, const char *argv[]) {
     }
 
     auto indexFile = inputFile.getValue() + ".zindex";
-    File inIndex(fopen(indexFile.c_str(), "rb"));
-    if (inIndex.get() == nullptr) {
-        cerr << "could not open " << indexFile << " for reading" << endl;
-        return 1;
-    }
-    auto index = Index::load(move(in), move(inIndex));
+    auto index = Index::load(move(in), indexFile.c_str());
 
     PrintSink sink;
     for (auto &q: query.getValue()) {

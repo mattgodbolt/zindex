@@ -6,6 +6,7 @@ include_directories(BEFORE SYSTEM ext/sqlite)
 include_directories(${ZLIB_INCLUDE_DIRS} src ext)
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -pthread")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -pthread")
 
 set(SOURCE_FILES
     src/File.h
@@ -34,6 +35,9 @@ target_link_libraries(zq libzindex ${ZLIB_LIBRARIES} dl)
 
 add_executable(unit-tests ${TEST_FILES} tests/SqliteTest.cpp)
 target_link_libraries(unit-tests libzindex ${ZLIB_LIBRARIES} dl)
+
+add_executable(sql-shell ext/sqlite/shell.c ext/sqlite/sqlite3.c)
+target_link_libraries(sql-shell dl)
 
 enable_testing()
 add_test(NAME unit-tests

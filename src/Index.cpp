@@ -3,6 +3,7 @@
 #include "KeyValue.h"
 #include "LineIndexer.h"
 #include "LineSink.h"
+#include "Sqlite.h"
 
 #include <zlib.h>
 
@@ -19,83 +20,13 @@ namespace {
 constexpr auto IndexEvery = 1024 * 1024;
 constexpr auto WindowSize = 32768;
 constexpr auto ChunkSize = 16384;
-constexpr auto HeaderMagic = 0x1f0a5845444e495aull;
-constexpr auto FooterMagic = 0x1f0a5a494e444558ull;
 constexpr auto Version = 1;
 
-struct Header {
-    uint64_t magic;
-    uint16_t version;
-    uint16_t windowSize;
-    uint32_t numAccessPoints;
-    uint64_t numLinesPlusOne;
-
-    Header()
-            : magic(HeaderMagic), version(Version), windowSize(WindowSize),
-              numAccessPoints(0), numLinesPlusOne(0) {
-    }
-
-    void throwIfBroken() const {
-        if (magic != HeaderMagic)
-            throw std::runtime_error(
-                    "Invalid or corrupt index file (bad magic)");
-        if (version != Version)
-            throw std::runtime_error("Unsupported version of index");
-        if (windowSize != WindowSize)
-            throw std::runtime_error("Unsupported window size");
-    }
-}__attribute__((packed));
-
-struct Footer {
-    uint64_t magic;
-
-    Footer() :
-            magic(FooterMagic) {
-    }
-
-    void throwIfBroken() const {
-        if (magic != FooterMagic)
-            throw std::runtime_error("Invalid or corrupt index file (at end)");
-    }
-}__attribute__((packed));
-
-struct AccessPoint {
-    uint64_t compressedOffset;
-    uint8_t bitOffset;
-    uint8_t padding[7];
-    uint8_t window[WindowSize];
-
-    AccessPoint(uint64_t compressedOffset, uint8_t bitOffset, uint64_t left,
-            const uint8_t *window) :
-            compressedOffset(compressedOffset), bitOffset(bitOffset) {
-        memset(padding, 0, sizeof(padding));
-        if (left)
-            memcpy(this->window, window + WindowSize - left, left);
-        if (left < WindowSize)
-            memcpy(this->window + left, window, WindowSize - left);
-    }
-}__attribute__((packed));
-
-template<typename T>
-void write(File &f, const T &obj) {
-    auto written = ::fwrite(&obj, 1, sizeof(obj), f.get());
-    if (written < 0) {
-        throw std::runtime_error("Error writing to file"); // todo errno
-    }
-    if (written != sizeof(obj)) {
-        throw std::runtime_error("Error writing to file: write truncated");
-    }
-}
-
-template<typename T>
-void writeArray(File &f, const T &array) {
-    auto written = ::fwrite(&array[0], sizeof(array[0]), array.size(), f.get());
-    if (written < 0) {
-        throw std::runtime_error("Error writing to file"); // todo errno
-    }
-    if (written != array.size()) {
-        throw std::runtime_error("Error writing to file: write truncated");
-    }
+void makeWindow(uint8_t *out, const uint8_t *in, uint64_t left) {
+    if (left)
+        memcpy(out, in + WindowSize - left, left);
+    if (left < WindowSize)
+        memcpy(out + left, in, WindowSize - left);
 }
 
 template<typename T>
@@ -166,67 +97,48 @@ struct NullSink : LineSink {
 }
 
 struct Index::Impl {
-    Header header;
     File compressed;
-    File index;
-    std::vector<uint64_t> uncompressedOffsets;
-    std::vector<uint64_t> lines;
+    Sqlite db;
 
-    Impl(const Header &h, File &&fromCompressed, File &&fromIndex)
-            : header(h), compressed(std::move(fromCompressed)),
-              index(std::move(fromIndex)) {
-        seek(index,
-                sizeof(Header) + header.numAccessPoints * sizeof(AccessPoint));
-
-        readArray(index, header.numAccessPoints, uncompressedOffsets);
-        readArray(index, header.numLinesPlusOne, lines);
-        read<Footer>(index).throwIfBroken();
-    }
-
-    uint32_t accessPointFor(uint64_t offset) const {
-        auto it = std::lower_bound(uncompressedOffsets.begin(),
-                uncompressedOffsets.end(), offset);
-        if (it == uncompressedOffsets.end())
-            return -1;
-        if (*it > offset && it != uncompressedOffsets.begin())
-            --it;
-        return it - uncompressedOffsets.begin();
+    Impl(File &&fromCompressed, Sqlite &&db)
+            : compressed(std::move(fromCompressed)), db(std::move(db)) {
     }
 
     void getLine(uint64_t line, LineSink &sink) {
-        // Line is 1-based, lines is zero-based. lines also contains an extra
-        // entry at the end of the file.
-        if (line >= lines.size())
-            return;
-        if (line == 0) return;
-        auto offset = lines[line - 1];
-        auto length = lines[line] - offset;
-        auto apNum = accessPointFor(offset);
+        auto q = db.prepare(R"(
+SELECT offset, compressedOffset, uncompressedOffset, length, bitOffset, window
+FROM LineOffsets, AccessPoints
+WHERE offset >= uncompressedOffset AND offset <= uncompressedEndOffset
+AND line = :line
+LIMIT 1)");
+        q.bindInt64(":line", line);
+        if (q.step() == true) return;
 
-        seek(index, sizeof(Header) + apNum * sizeof(AccessPoint));
-        auto ap = read<AccessPoint>(index);
+        auto offset = q.columnInt64(0);
+        auto compressedOffset = q.columnInt64(1);
+        auto uncompressedOffset = q.columnInt64(2);
+        auto length = q.columnInt64(3);
+        auto bitOffset = q.columnInt64(4);
+        auto window = q.columnBlob(5);
 
         ZStream zs(ZStream::Type::Raw);
         uint8_t input[ChunkSize];
         uint8_t discardBuffer[WindowSize];
 
-        seek(compressed, ap.bitOffset ? ap.compressedOffset - 1 : ap.compressedOffset);
-        if (ap.bitOffset) {
+        seek(compressed, bitOffset ? compressedOffset - 1 : compressedOffset);
+        if (bitOffset) {
             auto c = fgetc(compressed.get());
-            std::cout << " at " << offset << " - " << +c << std::endl;
             if (c == -1)
                 throw ZlibError(ferror(compressed.get()) ?
                         Z_ERRNO : Z_DATA_ERROR);
-            auto ret = inflatePrime(
-                    &zs.stream, ap.bitOffset, c >> (8 - ap.bitOffset));
+            auto ret = inflatePrime(&zs.stream, bitOffset, c >> (8 - bitOffset));
             if (ret != Z_OK) throw ZlibError(ret);
         }
-        auto ret = inflateSetDictionary(&zs.stream, ap.window,
-                WindowSize);
+        auto ret = inflateSetDictionary(&zs.stream, &window[0], WindowSize);
         if (ret != Z_OK) throw ZlibError(ret);
 
         uint8_t lineBuf[length];
-        auto numToSkip = offset - uncompressedOffsets[apNum];
+        auto numToSkip = offset - uncompressedOffset;
         bool skipping = true;
         zs.stream.avail_in = 0;
         do {
@@ -272,9 +184,35 @@ Index::Index(std::unique_ptr<Impl> &&imp) :
         impl_(std::move(imp)) {
 }
 
-void Index::build(File &&from, File &&to) {
-    Header header;
-    write(to, header);
+void Index::build(File &&from, const char *indexFilename) {
+    unlink(indexFilename);
+    Sqlite db;
+    db.open(indexFilename, false);
+
+    db.exec(R"(PRAGMA synchronous = OFF)");
+    db.exec(R"(PRAGMA journal_mode = MEMORY)");
+
+    db.exec(R"(
+CREATE TABLE AccessPoints(
+    uncompressedOffset INTEGER PRIMARY KEY,
+    uncompressedEndOffset INTEGER,
+    compressedOffset INTEGER,
+    bitOffset INTEGER,
+    window BLOB
+))");
+
+    db.exec(R"(
+CREATE TABLE LineOffsets(
+    line INTEGER PRIMARY KEY,
+    offset INTEGER,
+    length INTEGER
+))");
+
+    db.exec(R"(BEGIN TRANSACTION)");
+
+    auto addIndex = db.prepare(R"(
+INSERT INTO AccessPoints VALUES(:uncompressedOffset, :uncompressedEndOffset, :compressedOffset, :bitOffset, :window))");
+    auto addLine = db.prepare(R"(INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
 
     ZStream zs(ZStream::Type::ZlibOrGzip);
     uint8_t input[ChunkSize];
@@ -284,10 +222,10 @@ void Index::build(File &&from, File &&to) {
     uint64_t totalIn = 0;
     uint64_t totalOut = 0;
     uint64_t last = 0;
+    size_t indexId = 0;
     bool first = true;
     NullSink sink;
     LineIndexer indexer(sink);
-    std::vector<uint64_t> uncompressedOffsets;
 
     do {
         zs.stream.avail_in = fread(input, 1, ChunkSize, from.get());
@@ -321,41 +259,49 @@ void Index::build(File &&from, File &&to) {
             bool endOfBlock = zs.stream.data_type & 0x80;
             bool lastBlockInStream = zs.stream.data_type & 0x40;
             if (endOfBlock && !lastBlockInStream && needsIndex) {
-                auto numUnusedBits = zs.stream.data_type & 0x7;
-                AccessPoint ap(totalIn, numUnusedBits, zs.stream.avail_out,
-                        window);
-                uncompressedOffsets.emplace_back(totalOut);
-                write(to, ap);
-                header.numAccessPoints++;
+                if (totalOut != 0) {
+                    // Flush previous information.
+                    addIndex.bindInt64(":uncompressedEndOffset", totalOut - 1);
+                    addIndex.step();
+                    addIndex.reset();
+                }
+                uint8_t apWindow[WindowSize];
+                makeWindow(apWindow, window, zs.stream.avail_out);
+                addIndex.bindInt64(":uncompressedOffset", totalOut);
+                addIndex.bindInt64(":compressedOffset", totalIn);
+                addIndex.bindInt64(":bitOffset", zs.stream.data_type & 0x7);
+                addIndex.bindBlob(":window", apWindow, WindowSize);
             }
         } while (zs.stream.avail_in);
     } while (ret != Z_STREAM_END);
 
-    indexer.add(window, WindowSize - zs.stream.avail_out, true);
-    writeArray(to, uncompressedOffsets);
-    const auto &lineOffsets = indexer.lineOffsets();
-    writeArray(to, lineOffsets);
-    header.numLinesPlusOne = lineOffsets.size();
+    if (totalOut != 0) {
+        // Flush last block.
+        addIndex.bindInt64(":uncompressedEndOffset", totalOut - 1);
+        addIndex.step();
+    }
 
-    write(to, Footer());
-    seek(to, 0);
-    write(to, header);
+    indexer.add(window, WindowSize - zs.stream.avail_out, true);
+    const auto &lineOffsets = indexer.lineOffsets();
+    for (size_t line = 0; line < lineOffsets.size() - 1; ++line) {
+        addLine.reset();
+        addLine.bindInt64(":line", line + 1);
+        addLine.bindInt64(":offset", lineOffsets[line]);
+        addLine.bindInt64(":length", lineOffsets[line + 1] - lineOffsets[line]);
+        addLine.step();
+    }
+
+    db.exec(R"(END TRANSACTION)");
 }
 
-Index Index::load(File &&fromCompressed, File &&fromIndex) {
-    auto header = read<Header>(fromIndex);
-    header.throwIfBroken();
+Index Index::load(File &&fromCompressed, const char *indexFilename) {
+    Sqlite db;
+    db.open(indexFilename, true);
 
-    std::unique_ptr<Impl> impl(new Impl(header, std::move(fromCompressed),
-            std::move(fromIndex)));
+    std::unique_ptr<Impl> impl(new Impl(std::move(fromCompressed),
+            std::move(db)));
 
     return Index(std::move(impl));
-}
-
-uint64_t Index::lineOffset(uint64_t line) const {
-    if (line >= impl_->lines.size())
-        return -1;
-    return impl_->lines[line];
 }
 
 void Index::getLine(uint64_t line, LineSink &sink) {
