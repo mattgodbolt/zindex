@@ -49,7 +49,8 @@ void Sqlite::Statement::destroy() {
 
 Sqlite::Statement Sqlite::prepare(const std::string &sql) const {
     Sqlite::Statement statement;
-    R(sqlite3_prepare_v2(sql_, sql.c_str(), sql.size(), &statement.statement_, nullptr), sql);
+    R(sqlite3_prepare_v2(sql_, sql.c_str(), sql.size(),
+            &statement.statement_, nullptr), sql);
     return std::move(statement);
 }
 
@@ -76,7 +77,8 @@ bool Sqlite::Statement::step() {
     throw SqliteError(res);
 }
 
-void Sqlite::Statement::bindBlob(const std::string &param, const void *data, size_t length) {
+void Sqlite::Statement::bindBlob(
+        const std::string &param, const void *data, size_t length) {
     R(sqlite3_bind_blob(statement_, P(param), data, length, SQLITE_TRANSIENT));
 }
 
@@ -89,7 +91,7 @@ int64_t Sqlite::Statement::columnInt64(int index) const {
 }
 
 std::string Sqlite::Statement::columnString(int index) const {
-    return reinterpret_cast<const char *>(sqlite3_column_text(statement_, index));
+    return (const char *)sqlite3_column_text(statement_, index);
 }
 
 int Sqlite::Statement::columnCount() const {
@@ -102,7 +104,9 @@ std::string Sqlite::Statement::columnName(int index) const {
 
 int Sqlite::Statement::P(const std::string &param) const {
     auto index = sqlite3_bind_parameter_index(statement_, param.c_str());
-    if (index == 0) throw std::runtime_error("Unable to find bound parameter '" + param + "'");
+    if (index == 0)
+        throw std::runtime_error(
+                "Unable to find bound parameter '" + param + "'");
     return index;
 }
 

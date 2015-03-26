@@ -29,30 +29,6 @@ void makeWindow(uint8_t *out, const uint8_t *in, uint64_t left) {
         memcpy(out + left, in, WindowSize - left);
 }
 
-template<typename T>
-T read(File &f) {
-    uint8_t data[sizeof(T)];
-    auto nRead = ::fread(&data, 1, sizeof(T), f.get());
-    if (nRead < 0) {
-        throw std::runtime_error("Error reading from file"); // todo errno
-    }
-    if (nRead != sizeof(T)) {
-        throw std::runtime_error("Error reading from file: truncated");
-    }
-    return *reinterpret_cast<const T *>(data);
-}
-
-template<typename T>
-void readArray(File &f, uint64_t num, T &array) {
-    array.resize(num);
-    auto nRead = ::fread(&array[0], sizeof(array[0]), num, f.get());
-    if (nRead < 0)
-        throw std::runtime_error("Error while reading index");
-
-    if (nRead != num)
-        throw std::runtime_error("Error reading from file: truncated");
-}
-
 void seek(File &f, uint64_t pos) {
     auto err = ::fseek(f.get(), pos, SEEK_SET);
     if (err != 0)
@@ -62,26 +38,26 @@ void seek(File &f, uint64_t pos) {
 struct ZlibError : std::runtime_error {
     ZlibError(int result) :
             std::runtime_error(
-                    std::string("Error from zlib : ") + zError(result)) {
-    }
+                    std::string("Error from zlib : ") + zError(result)) { }
 };
+
+void R(int zlibErr) {
+    if (zlibErr != Z_OK) throw ZlibError(zlibErr);
+}
 
 struct ZStream {
     z_stream stream;
-    enum class Type
-            : int {
+    enum class Type : int {
         ZlibOrGzip = 47, Raw = -15,
     };
 
     explicit ZStream(Type type) {
         memset(&stream, 0, sizeof(stream));
-        int ret = inflateInit2(&stream, (int) type);
-        if (ret != Z_OK)
-            throw ZlibError(ret);
+        R(inflateInit2(&stream, (int)type));
     }
 
     ~ZStream() {
-        (void) inflateEnd(&stream);
+        (void)inflateEnd(&stream);
     }
 
     ZStream(ZStream &) = delete;
@@ -90,8 +66,7 @@ struct ZStream {
 };
 
 struct NullSink : LineSink {
-    void onLine(size_t, size_t, const char *, size_t) override {
-    }
+    void onLine(size_t, size_t, const char *, size_t) override { }
 };
 
 }
@@ -131,11 +106,9 @@ LIMIT 1)");
             if (c == -1)
                 throw ZlibError(ferror(compressed.get()) ?
                         Z_ERRNO : Z_DATA_ERROR);
-            auto ret = inflatePrime(&zs.stream, bitOffset, c >> (8 - bitOffset));
-            if (ret != Z_OK) throw ZlibError(ret);
+            R(inflatePrime(&zs.stream, bitOffset, c >> (8 - bitOffset)));
         }
-        auto ret = inflateSetDictionary(&zs.stream, &window[0], WindowSize);
-        if (ret != Z_OK) throw ZlibError(ret);
+        R(inflateSetDictionary(&zs.stream, &window[0], WindowSize));
 
         uint8_t lineBuf[length];
         auto numToSkip = offset - uncompressedOffset;
@@ -152,20 +125,22 @@ LIMIT 1)");
                 zs.stream.next_out = discardBuffer;
                 numToSkip -= WindowSize;
             } else if (numToSkip) {
-                zs.stream.avail_out = (uInt) numToSkip;
+                zs.stream.avail_out = (uInt)numToSkip;
                 zs.stream.next_out = discardBuffer;
                 numToSkip = 0;
             }
             do {
                 if (zs.stream.avail_in == 0) {
-                    zs.stream.avail_in = ::fread(input, 1, sizeof(input), compressed.get());
+                    zs.stream.avail_in = ::fread(input, 1, sizeof(input),
+                            compressed.get());
                     if (ferror(compressed.get())) throw ZlibError(Z_ERRNO);
                     if (zs.stream.avail_in == 0) throw ZlibError(Z_DATA_ERROR);
                     zs.stream.next_in = input;
                 }
                 auto ret = inflate(&zs.stream, Z_NO_FLUSH);
                 if (ret == Z_NEED_DICT) throw ZlibError(Z_DATA_ERROR);
-                if (ret == Z_MEM_ERROR || ret == Z_DATA_ERROR) throw ZlibError(ret);
+                if (ret == Z_MEM_ERROR || ret == Z_DATA_ERROR)
+                    throw ZlibError(ret);
                 if (ret == Z_STREAM_END) break;
             } while (zs.stream.avail_out);
         } while (skipping);
@@ -174,15 +149,11 @@ LIMIT 1)");
     }
 };
 
-Index::Index() {
-}
+Index::Index() { }
 
-Index::~Index() {
-}
+Index::~Index() { }
 
-Index::Index(std::unique_ptr<Impl> &&imp) :
-        impl_(std::move(imp)) {
-}
+Index::Index(std::unique_ptr<Impl> &&imp) : impl_(std::move(imp)) { }
 
 void Index::build(File &&from, const char *indexFilename) {
     unlink(indexFilename);
@@ -191,6 +162,7 @@ void Index::build(File &&from, const char *indexFilename) {
 
     db.exec(R"(PRAGMA synchronous = OFF)");
     db.exec(R"(PRAGMA journal_mode = MEMORY)");
+    db.exec(R"(PRAGMA application_id = 0x5a494458)");
 
     db.exec(R"(
 CREATE TABLE AccessPoints(
@@ -211,8 +183,11 @@ CREATE TABLE LineOffsets(
     db.exec(R"(BEGIN TRANSACTION)");
 
     auto addIndex = db.prepare(R"(
-INSERT INTO AccessPoints VALUES(:uncompressedOffset, :uncompressedEndOffset, :compressedOffset, :bitOffset, :window))");
-    auto addLine = db.prepare(R"(INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
+INSERT INTO AccessPoints VALUES(
+:uncompressedOffset, :uncompressedEndOffset,
+:compressedOffset, :bitOffset, :window))");
+    auto addLine = db.prepare(R"(
+INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
 
     ZStream zs(ZStream::Type::ZlibOrGzip);
     uint8_t input[ChunkSize];

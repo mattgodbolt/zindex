@@ -15,9 +15,7 @@ public:
 
     void add(const uint8_t *data, uint64_t length, bool last);
 
-    const std::vector<uint64_t> &lineOffsets() const {
-        return lineOffsets_;
-    }
+    const std::vector<uint64_t> &lineOffsets() const { return lineOffsets_; }
 
 private:
     void lineData(const uint8_t *begin, const uint8_t *end);
