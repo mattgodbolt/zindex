@@ -17,7 +17,7 @@
 
 namespace {
 
-constexpr auto IndexEvery = 1024 * 1024;
+constexpr auto IndexEvery = 32 * 1024 * 1024;
 constexpr auto WindowSize = 32768;
 constexpr auto ChunkSize = 16384;
 constexpr auto Version = 1;
@@ -246,6 +246,7 @@ INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
                 addIndex.bindInt64(":compressedOffset", totalIn);
                 addIndex.bindInt64(":bitOffset", zs.stream.data_type & 0x7);
                 addIndex.bindBlob(":window", apWindow, WindowSize);
+                last = totalOut;
             }
         } while (zs.stream.avail_in);
     } while (ret != Z_STREAM_END);
