@@ -27,5 +27,6 @@ public:
     bool exec(const char *against, Matches &result);
 
 private:
+    void release();
     void R(int e) const;
 };
