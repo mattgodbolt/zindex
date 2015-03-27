@@ -19,12 +19,16 @@ set(SOURCE_FILES
     src/Sqlite.cpp
     src/Sqlite.h
     src/SqliteError.h
+    src/RegExp.h
+    src/RegExp.cpp
     ext/sqlite/sqlite3.c)
 
 set(TEST_FILES
     tests/catch.hpp
     tests/LineIndexerTest.cpp
-    tests/test_main.cpp)
+    tests/test_main.cpp
+    tests/SqliteTest.cpp
+    tests/RegExpTest.cpp)
 
 add_library(libzindex ${SOURCE_FILES})
 
@@ -33,7 +37,7 @@ target_link_libraries(zindex libzindex ${ZLIB_LIBRARIES} dl)
 add_executable(zq src/zq.cpp)
 target_link_libraries(zq libzindex ${ZLIB_LIBRARIES} dl)
 
-add_executable(unit-tests ${TEST_FILES} tests/SqliteTest.cpp)
+add_executable(unit-tests ${TEST_FILES})
 target_link_libraries(unit-tests libzindex ${ZLIB_LIBRARIES} dl)
 
 add_executable(sql-shell ext/sqlite/shell.c ext/sqlite/sqlite3.c)
