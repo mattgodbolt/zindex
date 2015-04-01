@@ -4,8 +4,7 @@
 
 class LineSink {
 public:
-    virtual ~LineSink() {
-    }
+    virtual ~LineSink() { }
 
     virtual void onLine(
             size_t lineNumber,

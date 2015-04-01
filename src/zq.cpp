@@ -22,7 +22,7 @@ struct PrintSink : LineSink {
 int Main(int argc, const char *argv[]) {
     CmdLine cmd("Lookup indices in a compressed text file");
     UnlabeledValueArg<string> inputFile(
-            "input-file", "Read input from <file>", true, "", "<file>", cmd);
+            "input-file", "Read input from <file>", true, "", "file", cmd);
     UnlabeledMultiArg<uint64_t> query(
             "query", "Query for <query>", false, "<query>", cmd);
     SwitchArg verbose("v", "verbose", "Be more verbose", cmd);

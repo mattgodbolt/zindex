@@ -65,10 +65,6 @@ struct ZStream {
     ZStream &operator=(ZStream &) = delete;
 };
 
-struct NullSink : LineSink {
-    void onLine(size_t, size_t, const char *, size_t) override { }
-};
-
 }
 
 struct Index::Impl {
@@ -155,7 +151,8 @@ Index::~Index() { }
 
 Index::Index(std::unique_ptr<Impl> &&imp) : impl_(std::move(imp)) { }
 
-void Index::build(File &&from, const char *indexFilename) {
+void Index::build(File &&from, const char *indexFilename,
+        std::function<std::unique_ptr<LineSink>(Sqlite &)> indexerFactory) {
     unlink(indexFilename);
     Sqlite db;
     db.open(indexFilename, false);
@@ -180,6 +177,8 @@ CREATE TABLE LineOffsets(
     length INTEGER
 ))");
 
+    auto sink = indexerFactory(db);
+
     db.exec(R"(BEGIN TRANSACTION)");
 
     auto addIndex = db.prepare(R"(
@@ -197,10 +196,8 @@ INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
     uint64_t totalIn = 0;
     uint64_t totalOut = 0;
     uint64_t last = 0;
-    size_t indexId = 0;
     bool first = true;
-    NullSink sink;
-    LineIndexer indexer(sink);
+    LineIndexer indexer(*sink);
 
     do {
         zs.stream.avail_in = fread(input, 1, ChunkSize, from.get());

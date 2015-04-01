@@ -30,7 +30,7 @@ set(TEST_FILES
     tests/SqliteTest.cpp
     tests/RegExpTest.cpp)
 
-add_library(libzindex ${SOURCE_FILES})
+add_library(libzindex ${SOURCE_FILES} src/RegExpSink.cpp src/RegExpSink.h)
 
 add_executable(zindex src/zindex.cpp)
 target_link_libraries(zindex libzindex ${ZLIB_LIBRARIES} dl)
