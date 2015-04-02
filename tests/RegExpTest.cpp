@@ -1,3 +1,4 @@
+#include <cstring>
 #include "RegExp.h"
 
 #include "catch.hpp"
@@ -13,7 +14,7 @@ TEST_CASE("constructs regexes", "[RegExp]") {
             RegExp r("(");
         } catch (const std::runtime_error &e) {
             threw = true;
-            REQUIRE(e.what() == std::string("Unmatched ( or \\("));  // this is probably a bridge too far
+            REQUIRE(strstr(e.what(), "Unmatched (") != nullptr);
         }
         REQUIRE(threw);
     }
