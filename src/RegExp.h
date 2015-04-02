@@ -29,4 +29,5 @@ public:
 private:
     void release();
     void R(int e) const;
+    void R(int e, const char *context) const;
 };

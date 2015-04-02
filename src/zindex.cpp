@@ -1,6 +1,6 @@
 #include "File.h"
 #include "Index.h"
-#include "RegExpSink.h"
+#include "RegExpIndexer.h"
 
 #include <tclap/CmdLine.h>
 
@@ -15,6 +15,7 @@ int Main(int argc, const char *argv[]) {
             "input-file", "Read input from <file>", true, "", "file", cmd);
     SwitchArg verbose("v", "verbose", "Be more verbose", cmd);
     SwitchArg numeric("n", "numeric", "Assume the index is numeric", cmd);
+    SwitchArg unique("u", "unique", "Assume each line's index is unique", cmd);
     ValueArg<string> regex("", "regex", "Create an index using <regex>", true,
             "", "regex", cmd);
 
@@ -27,18 +28,16 @@ int Main(int argc, const char *argv[]) {
         return 1;
     }
 
-    std::function<std::unique_ptr<LineSink>(Sqlite &)> indexerFactory;
+    auto outputFile = inputFile.getValue() + ".zindex";
+    Index::Builder builder(move(in), outputFile);
     if (regex.isSet()) {
-        indexerFactory = [ & ](Sqlite &db) -> std::unique_ptr<LineSink> {
-            return std::unique_ptr<LineSink>(new RegExpSink(db, regex.getValue()));
-        };
+        RegExpIndexer indexer(regex.getValue()); // arguably we should pass uniq_ptr<> to builder?
+        builder.addIndexer("default", regex.getValue(), numeric.isSet(), unique.isSet(), indexer);
+        builder.build();
     } else {
         // Not possible at the moment.
         cerr << "Regex must be set" << std::endl;
     }
-
-    auto outputFile = inputFile.getValue() + ".zindex";
-    Index::build(move(in), outputFile.c_str(), indexerFactory);
 
     return 0;
 }

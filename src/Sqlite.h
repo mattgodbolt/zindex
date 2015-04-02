@@ -29,14 +29,12 @@ public:
     class Statement {
         sqlite3_stmt *statement_;
 
-        Statement() : statement_(nullptr) {
-        }
-
         void destroy();
 
         friend class Sqlite;
 
     public:
+        Statement() : statement_(nullptr) {}
         ~Statement() {
             destroy();
         }
@@ -46,9 +44,10 @@ public:
         Statement(Statement &&other);
         Statement &operator=(Statement &&other);
 
-        void reset();
-        void bindInt64(const std::string &param, int64_t data);
-        void bindBlob(const std::string &param, const void *data, size_t length);
+        Statement &reset();
+        Statement &bindInt64(const std::string &param, int64_t data);
+        Statement &bindBlob(const std::string &param, const void *data, size_t length);
+        Statement &bindString(const std::string &param, const std::string &string);
 
         bool step();
 

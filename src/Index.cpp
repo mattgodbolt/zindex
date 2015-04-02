@@ -1,8 +1,8 @@
 #include "Index.h"
 
-#include "KeyValue.h"
-#include "LineIndexer.h"
+#include "LineFinder.h"
 #include "LineSink.h"
+#include "LineIndexer.h"
 #include "Sqlite.h"
 
 #include <zlib.h>
@@ -14,6 +14,7 @@
 #include <stdexcept>
 #include <tuple>
 #include <vector>
+#include <unordered_map>
 
 namespace {
 
@@ -63,6 +64,49 @@ struct ZStream {
     ZStream(ZStream &) = delete;
 
     ZStream &operator=(ZStream &) = delete;
+};
+
+struct IndexHandler {
+    virtual ~IndexHandler() { }
+
+    virtual void index(uint64_t line, const char *index, size_t indexLength,
+            size_t offset) = 0;
+};
+
+struct NumericHandler : IndexHandler {
+    Sqlite::Statement insert;
+
+    NumericHandler(Sqlite::Statement &&insert)
+            : insert(std::move(insert)) { }
+
+    void index(uint64_t line, const char *index, size_t indexLength,
+            size_t offset) override {
+        auto initIndex = index;
+        auto initLen = indexLength;
+        int64_t val = 0;
+        bool negative = false;
+        if (indexLength > 0 && *index == '-') {
+            negative = true;
+            indexLength--;
+            index++;
+        }
+        if (indexLength == 0)
+            throw std::invalid_argument("Non-numeric: empty string");
+        while (indexLength) {
+            val *= 10;
+            if (*index < '0' || *index > '9')
+                throw std::invalid_argument("Non-numeric: '"
+                        + std::string(initIndex, initLen) + "'");
+            val += *index - '0';
+            indexLength--;
+        }
+        if (negative) val = -val;
+        insert
+                .reset()
+                .bindInt64(":key", val)
+                .bindInt64(":line", line)
+                .bindInt64(":offset", offset);
+    }
 };
 
 }
@@ -151,17 +195,25 @@ Index::~Index() { }
 
 Index::Index(std::unique_ptr<Impl> &&imp) : impl_(std::move(imp)) { }
 
-void Index::build(File &&from, const char *indexFilename,
-        std::function<std::unique_ptr<LineSink>(Sqlite &)> indexerFactory) {
-    unlink(indexFilename);
+struct Index::Builder::Impl : LineSink {
+    File from;
+    std::string indexFilename;
     Sqlite db;
-    db.open(indexFilename, false);
+    Sqlite::Statement addIndexSql;
+    std::unordered_map<std::string, std::unique_ptr<IndexHandler>> indexers;
 
-    db.exec(R"(PRAGMA synchronous = OFF)");
-    db.exec(R"(PRAGMA journal_mode = MEMORY)");
-    db.exec(R"(PRAGMA application_id = 0x5a494458)");
+    Impl(File &&from, const std::string &indexFilename)
+            : from(std::move(from)), indexFilename(indexFilename) { }
 
-    db.exec(R"(
+    void init() {
+        unlink(indexFilename.c_str());
+        db.open(indexFilename, false);
+
+        db.exec(R"(PRAGMA synchronous = OFF)");
+        db.exec(R"(PRAGMA journal_mode = MEMORY)");
+        db.exec(R"(PRAGMA application_id = 0x5a494458)");
+
+        db.exec(R"(
 CREATE TABLE AccessPoints(
     uncompressedOffset INTEGER PRIMARY KEY,
     uncompressedEndOffset INTEGER,
@@ -170,101 +222,166 @@ CREATE TABLE AccessPoints(
     window BLOB
 ))");
 
-    db.exec(R"(
+        db.exec(R"(
 CREATE TABLE LineOffsets(
     line INTEGER PRIMARY KEY,
     offset INTEGER,
     length INTEGER
 ))");
 
-    auto sink = indexerFactory(db);
+        db.exec(R"(
+CREATE TABLE Indexes(
+    name STRING PRIMARY KEY,
+    creationString STRING,
+    isNumeric INTEGER
+))");
+        addIndexSql = db.prepare(R"(
+INSERT INTO Indexes VALUES(:name, :creationString, :isNumeric)
+)");
+    }
 
-    db.exec(R"(BEGIN TRANSACTION)");
+    void build() {
+        db.exec(R"(BEGIN TRANSACTION)");
 
-    auto addIndex = db.prepare(R"(
+        auto addIndex = db.prepare(R"(
 INSERT INTO AccessPoints VALUES(
 :uncompressedOffset, :uncompressedEndOffset,
 :compressedOffset, :bitOffset, :window))");
-    auto addLine = db.prepare(R"(
+        auto addLine = db.prepare(R"(
 INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
 
-    ZStream zs(ZStream::Type::ZlibOrGzip);
-    uint8_t input[ChunkSize];
-    uint8_t window[WindowSize];
+        ZStream zs(ZStream::Type::ZlibOrGzip);
+        uint8_t input[ChunkSize];
+        uint8_t window[WindowSize];
 
-    int ret = 0;
-    uint64_t totalIn = 0;
-    uint64_t totalOut = 0;
-    uint64_t last = 0;
-    bool first = true;
-    LineIndexer indexer(*sink);
+        int ret = 0;
+        uint64_t totalIn = 0;
+        uint64_t totalOut = 0;
+        uint64_t last = 0;
+        bool first = true;
+        LineFinder finder(*this);
 
-    do {
-        zs.stream.avail_in = fread(input, 1, ChunkSize, from.get());
-        if (ferror(from.get()))
-            throw ZlibError(Z_ERRNO);
-        if (zs.stream.avail_in == 0)
-            throw ZlibError(Z_DATA_ERROR);
-        zs.stream.next_in = input;
         do {
-            if (zs.stream.avail_out == 0) {
-                zs.stream.avail_out = WindowSize;
-                zs.stream.next_out = window;
-                if (!first) {
-                    indexer.add(window, WindowSize, false);
-                }
-                first = false;
-            }
-            totalIn += zs.stream.avail_in;
-            totalOut += zs.stream.avail_out;
-            ret = inflate(&zs.stream, Z_BLOCK);
-            totalIn -= zs.stream.avail_in;
-            totalOut -= zs.stream.avail_out;
-            if (ret == Z_NEED_DICT)
+            zs.stream.avail_in = fread(input, 1, ChunkSize, from.get());
+            if (ferror(from.get()))
+                throw ZlibError(Z_ERRNO);
+            if (zs.stream.avail_in == 0)
                 throw ZlibError(Z_DATA_ERROR);
-            if (ret == Z_MEM_ERROR || ret == Z_DATA_ERROR)
-                throw ZlibError(ret);
-            if (ret == Z_STREAM_END)
-                break;
-            auto sinceLast = totalOut - last;
-            bool needsIndex = sinceLast > IndexEvery || totalOut == 0;
-            bool endOfBlock = zs.stream.data_type & 0x80;
-            bool lastBlockInStream = zs.stream.data_type & 0x40;
-            if (endOfBlock && !lastBlockInStream && needsIndex) {
-                if (totalOut != 0) {
-                    // Flush previous information.
-                    addIndex.bindInt64(":uncompressedEndOffset", totalOut - 1);
-                    addIndex.step();
-                    addIndex.reset();
+            zs.stream.next_in = input;
+            do {
+                if (zs.stream.avail_out == 0) {
+                    zs.stream.avail_out = WindowSize;
+                    zs.stream.next_out = window;
+                    if (!first) {
+                        finder.add(window, WindowSize, false);
+                    }
+                    first = false;
                 }
-                uint8_t apWindow[WindowSize];
-                makeWindow(apWindow, window, zs.stream.avail_out);
-                addIndex.bindInt64(":uncompressedOffset", totalOut);
-                addIndex.bindInt64(":compressedOffset", totalIn);
-                addIndex.bindInt64(":bitOffset", zs.stream.data_type & 0x7);
-                addIndex.bindBlob(":window", apWindow, WindowSize);
-                last = totalOut;
-            }
-        } while (zs.stream.avail_in);
-    } while (ret != Z_STREAM_END);
+                totalIn += zs.stream.avail_in;
+                totalOut += zs.stream.avail_out;
+                ret = inflate(&zs.stream, Z_BLOCK);
+                totalIn -= zs.stream.avail_in;
+                totalOut -= zs.stream.avail_out;
+                if (ret == Z_NEED_DICT)
+                    throw ZlibError(Z_DATA_ERROR);
+                if (ret == Z_MEM_ERROR || ret == Z_DATA_ERROR)
+                    throw ZlibError(ret);
+                if (ret == Z_STREAM_END)
+                    break;
+                auto sinceLast = totalOut - last;
+                bool needsIndex = sinceLast > IndexEvery || totalOut == 0;
+                bool endOfBlock = zs.stream.data_type & 0x80;
+                bool lastBlockInStream = zs.stream.data_type & 0x40;
+                if (endOfBlock && !lastBlockInStream && needsIndex) {
+                    if (totalOut != 0) {
+                        // Flush previous information.
+                        addIndex.bindInt64(":uncompressedEndOffset", totalOut - 1);
+                        addIndex.step();
+                        addIndex.reset();
+                    }
+                    uint8_t apWindow[WindowSize];
+                    makeWindow(apWindow, window, zs.stream.avail_out);
+                    addIndex.bindInt64(":uncompressedOffset", totalOut);
+                    addIndex.bindInt64(":compressedOffset", totalIn);
+                    addIndex.bindInt64(":bitOffset", zs.stream.data_type & 0x7);
+                    addIndex.bindBlob(":window", apWindow, WindowSize);
+                    last = totalOut;
+                }
+            } while (zs.stream.avail_in);
+        } while (ret != Z_STREAM_END);
 
-    if (totalOut != 0) {
-        // Flush last block.
-        addIndex.bindInt64(":uncompressedEndOffset", totalOut - 1);
-        addIndex.step();
+        if (totalOut != 0) {
+            // Flush last block.
+            addIndex.bindInt64(":uncompressedEndOffset", totalOut - 1);
+            addIndex.step();
+        }
+
+        finder.add(window, WindowSize - zs.stream.avail_out, true);
+        const auto &lineOffsets = finder.lineOffsets();
+        for (size_t line = 0; line < lineOffsets.size() - 1; ++line) {
+            addLine.reset();
+            addLine.bindInt64(":line", line + 1);
+            addLine.bindInt64(":offset", lineOffsets[line]);
+            addLine.bindInt64(":length", lineOffsets[line + 1] - lineOffsets[line]);
+            addLine.step();
+        }
+
+        db.exec(R"(END TRANSACTION)");
     }
 
-    indexer.add(window, WindowSize - zs.stream.avail_out, true);
-    const auto &lineOffsets = indexer.lineOffsets();
-    for (size_t line = 0; line < lineOffsets.size() - 1; ++line) {
-        addLine.reset();
-        addLine.bindInt64(":line", line + 1);
-        addLine.bindInt64(":offset", lineOffsets[line]);
-        addLine.bindInt64(":length", lineOffsets[line + 1] - lineOffsets[line]);
-        addLine.step();
+    void addIndexer(const std::string &name, const std::string &creation,
+            bool numeric, bool unique, LineIndexer &indexer) {
+        auto table = "index_" + name;
+        std::string type = numeric ? "INTEGER" : "STRING";
+        if (unique) type += " PRIMARY KEY";
+        db.exec(R"(
+CREATE TABLE )" + table + R"((
+    key )" + type + R"(,
+    line INTEGER,
+    offset INTEGER
+))");
+        addIndexSql
+                .reset()
+                .bindString(":name", name)
+                .bindString(":creationString", creation)
+                .bindInt64(":isNumeric", numeric ? 1 : 0)
+                .step();
+
+        auto inserter = db.prepare(R"(
+INSERT INTO )" + table + R"( VALUES(:key, :line, :offset)
+)");
+        if (numeric) {
+            indexers.emplace(name, std::unique_ptr<IndexHandler>(new NumericHandler(std::move(inserter))));
+        } else {
+            // TODO!
+//            indexers.emplace(name, indexer);
+        }
     }
 
-    db.exec(R"(END TRANSACTION)");
+    void onLine(
+            size_t lineNumber,
+            size_t fileOffset,
+            const char *line, size_t length) override {
+        // TODO: talk to each indexer in turn
+    }
+};
+
+Index::Builder::Builder(File &&from, const std::string &indexFilename)
+        : impl_(new Impl(std::move(from), indexFilename)) {
+    impl_->init();
+}
+
+void Index::Builder::addIndexer(
+        const std::string &name,
+        const std::string &creation,
+        bool numeric,
+        bool unique,
+        LineIndexer &indexer) {
+    impl_->addIndexer(name, creation, numeric, unique, indexer);
+}
+
+void Index::Builder::build() {
+    impl_->build();
 }
 
 Index Index::load(File &&fromCompressed, const char *indexFilename) {
@@ -279,4 +396,7 @@ Index Index::load(File &&fromCompressed, const char *indexFilename) {
 
 void Index::getLine(uint64_t line, LineSink &sink) {
     impl_->getLine(line, sink);
+}
+
+Index::Builder::~Builder() {
 }

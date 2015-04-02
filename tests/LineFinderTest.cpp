@@ -1,4 +1,4 @@
-#include "LineIndexer.h"
+#include "LineFinder.h"
 #include "LineSink.h"
 
 #include "catch.hpp"
@@ -25,24 +25,24 @@ struct RecordingSink : LineSink {
 
 }
 
-TEST_CASE("indexes lines", "[LineIndexer]") {
+TEST_CASE("finds lines", "[LineFinder]") {
     RecordingSink sink;
-    LineIndexer indexer(sink);
+    LineFinder finder(sink);
 
-    REQUIRE(indexer.lineOffsets().empty());
+    REQUIRE(finder.lineOffsets().empty());
     REQUIRE(sink.empty());
 
     SECTION("empty input") {
-        indexer.add(nullptr, 0, true);
-        REQUIRE(indexer.lineOffsets().size() == 1);
-        REQUIRE(indexer.lineOffsets()[0] == 0);
+        finder.add(nullptr, 0, true);
+        REQUIRE(finder.lineOffsets().size() == 1);
+        REQUIRE(finder.lineOffsets()[0] == 0);
         REQUIRE(sink.empty());
     }
 
     SECTION("single line") {
         static const uint8_t one[] = "One\n";
-        indexer.add(one, sizeof(one) - 1, true);
-        const auto &lo = indexer.lineOffsets();
+        finder.add(one, sizeof(one) - 1, true);
+        const auto &lo = finder.lineOffsets();
         REQUIRE(lo.size() == 2);
         REQUIRE(lo[0] == 0);
         REQUIRE(lo[1] == 4);
@@ -53,8 +53,8 @@ TEST_CASE("indexes lines", "[LineIndexer]") {
     SECTION("two lines") {
         static const uint8_t oneTwo[] = "One\nTwo\n";
         SECTION("in one go") {
-            indexer.add(oneTwo, sizeof(oneTwo) - 1, true);
-            const auto &lo = indexer.lineOffsets();
+            finder.add(oneTwo, sizeof(oneTwo) - 1, true);
+            const auto &lo = finder.lineOffsets();
             REQUIRE(lo.size() == 3);
             REQUIRE(lo[0] == 0);
             REQUIRE(lo[1] == 4);
@@ -67,8 +67,8 @@ TEST_CASE("indexes lines", "[LineIndexer]") {
         }
         SECTION("byte at a time") {
             for (auto i = 0u; i < sizeof(oneTwo) - 1; ++i)
-                indexer.add(oneTwo + i, 1, i == sizeof(oneTwo) - 2);
-            const auto &lo = indexer.lineOffsets();
+                finder.add(oneTwo + i, 1, i == sizeof(oneTwo) - 2);
+            const auto &lo = finder.lineOffsets();
             REQUIRE(lo.size() == 3);
             REQUIRE(lo[0] == 0);
             REQUIRE(lo[1] == 4);
@@ -83,9 +83,9 @@ TEST_CASE("indexes lines", "[LineIndexer]") {
             for (auto i = 0u; i < sizeof(oneTwo) - 1; i += 3) {
                 int remaining = sizeof(oneTwo) - 1 - i;
                 auto length = remaining < 3 ? remaining : 3;
-                indexer.add(oneTwo + i, length, remaining <= 3);
+                finder.add(oneTwo + i, length, remaining <= 3);
             }
-            const auto &lo = indexer.lineOffsets();
+            const auto &lo = finder.lineOffsets();
             REQUIRE(lo.size() == 3);
             REQUIRE(lo[0] == 0);
             REQUIRE(lo[1] == 4);
@@ -97,8 +97,8 @@ TEST_CASE("indexes lines", "[LineIndexer]") {
             REQUIRE(sink.fileOffsets[1] == 4);
         }
         SECTION("in one go missing newline") {
-            indexer.add(oneTwo, sizeof(oneTwo) - 2, true);
-            const auto &lo = indexer.lineOffsets();
+            finder.add(oneTwo, sizeof(oneTwo) - 2, true);
+            const auto &lo = finder.lineOffsets();
             REQUIRE(lo.size() == 3);
             REQUIRE(lo[0] == 0);
             REQUIRE(lo[1] == 4);

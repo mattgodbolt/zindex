@@ -12,25 +12,26 @@ set(SOURCE_FILES
     src/File.h
     src/Index.cpp
     src/Index.h
-    src/KeyValue.h
-    src/LineIndexer.cpp
-    src/LineIndexer.h
+    src/LineFinder.cpp
+    src/LineFinder.h
     src/LineSink.h
     src/Sqlite.cpp
     src/Sqlite.h
     src/SqliteError.h
     src/RegExp.h
     src/RegExp.cpp
+    src/RegExpIndexer.cpp
+    src/RegExpIndexer.h
     ext/sqlite/sqlite3.c)
 
 set(TEST_FILES
     tests/catch.hpp
-    tests/LineIndexerTest.cpp
+    tests/LineFinderTest.cpp
     tests/test_main.cpp
     tests/SqliteTest.cpp
     tests/RegExpTest.cpp)
 
-add_library(libzindex ${SOURCE_FILES} src/RegExpSink.cpp src/RegExpSink.h)
+add_library(libzindex ${SOURCE_FILES} src/LineIndexer.h src/IndexSink.h)
 
 add_executable(zindex src/zindex.cpp)
 target_link_libraries(zindex libzindex ${ZLIB_LIBRARIES} dl)

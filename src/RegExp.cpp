@@ -6,7 +6,7 @@ RegExp::RegExp(const std::string &regex)
         : RegExp(regex.c_str()) { }
 
 RegExp::RegExp(const char *regex) {
-    R(regcomp(&re_, regex, REG_EXTENDED));
+    R(regcomp(&re_, regex, REG_EXTENDED), regex);
     owned_ = true;
 }
 
@@ -43,6 +43,13 @@ void RegExp::R(int e) const {
     char error[1024];
     regerror(e, &re_, error, sizeof(error));
     throw std::runtime_error(error);
+}
+
+void RegExp::R(int e, const char *context) const {
+    if (!e) return;
+    char error[1024];
+    regerror(e, &re_, error, sizeof(error));
+    throw std::runtime_error(error + std::string(" in '") + context + "'");
 }
 
 RegExp::RegExp(RegExp &&exp)

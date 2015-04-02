@@ -1,4 +1,4 @@
-#include "LineIndexer.h"
+#include "LineFinder.h"
 
 #include "LineSink.h"
 
@@ -6,11 +6,11 @@
 #include <cstring>
 #include <stdexcept>
 
-LineIndexer::LineIndexer(LineSink &sink)
+LineFinder::LineFinder(LineSink &sink)
         : sink_(sink), currentLineOffset_(0) {
 }
 
-void LineIndexer::add(const uint8_t *data, uint64_t length, bool last) {
+void LineFinder::add(const uint8_t *data, uint64_t length, bool last) {
     auto endData = data + length;
     while (data < endData) {
         auto lineEnd = static_cast<const uint8_t *>(memchr(data, '\n', endData - data));
@@ -28,7 +28,7 @@ void LineIndexer::add(const uint8_t *data, uint64_t length, bool last) {
         lineOffsets_.emplace_back(currentLineOffset_);
 }
 
-void LineIndexer::lineData(const uint8_t *begin, const uint8_t *end) {
+void LineFinder::lineData(const uint8_t *begin, const uint8_t *end) {
     lineOffsets_.emplace_back(currentLineOffset_);
     uint64_t length;
     if (lineBuffer_.empty()) {

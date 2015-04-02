@@ -66,8 +66,9 @@ Sqlite::Statement &Sqlite::Statement::operator=(Sqlite::Statement &&other) {
     other.statement_ = nullptr;
 }
 
-void Sqlite::Statement::reset() {
+Sqlite::Statement &Sqlite::Statement::reset() {
     R(sqlite3_reset(statement_));
+    return *this;
 }
 
 bool Sqlite::Statement::step() {
@@ -77,13 +78,20 @@ bool Sqlite::Statement::step() {
     throw SqliteError(res);
 }
 
-void Sqlite::Statement::bindBlob(
+Sqlite::Statement &Sqlite::Statement::bindBlob(
         const std::string &param, const void *data, size_t length) {
     R(sqlite3_bind_blob(statement_, P(param), data, length, SQLITE_TRANSIENT));
+    return *this;
 }
 
-void Sqlite::Statement::bindInt64(const std::string &param, int64_t data) {
+Sqlite::Statement &Sqlite::Statement::bindInt64(const std::string &param, int64_t data) {
     R(sqlite3_bind_int64(statement_, P(param), data));
+    return *this;
+}
+
+Sqlite::Statement &Sqlite::Statement::bindString(const std::string &param, const std::string &data) {
+    R(sqlite3_bind_text(statement_, P(param), data.c_str(), data.size(), SQLITE_TRANSIENT));
+    return *this;
 }
 
 int64_t Sqlite::Statement::columnInt64(int index) const {
@@ -118,5 +126,5 @@ std::vector<uint8_t> Sqlite::Statement::columnBlob(int index) const {
 }
 
 void Sqlite::exec(const std::string &sql) {
-    R(sqlite3_exec(sql_, sql.c_str(), nullptr, nullptr, nullptr));
+    R(sqlite3_exec(sql_, sql.c_str(), nullptr, nullptr, nullptr), sql);
 }

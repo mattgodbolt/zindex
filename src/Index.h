@@ -6,6 +6,7 @@
 #include <memory>
 
 class LineSink;
+class LineIndexer;
 class Sqlite;
 
 class Index {
@@ -21,7 +22,21 @@ public:
     ~Index();
 
     void getLine(uint64_t line, LineSink &sink);
-    static void build(File &&from, const char *indexFilename,
-        std::function<std::unique_ptr<LineSink>(Sqlite &)> indexerFactory);
+
+    class Builder {
+        struct Impl;
+        std::unique_ptr<Impl> impl_;
+    public:
+        Builder(File &&from, const std::string &indexFilename);
+        ~Builder();
+        void addIndexer(const std::string &name,
+                const std::string &creation,
+                bool numeric,
+                bool unique,
+                LineIndexer &indexer);
+
+        void build();
+    };
+
     static Index load(File &&fromCompressed, const char *indexFilename);
 };
