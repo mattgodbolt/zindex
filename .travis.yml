@@ -9,8 +9,8 @@ before_install:
 install:
   - if [ "$CXX" = "g++" ]; then sudo apt-get install -qq g++-4.7; fi
   - if [ "$CXX" = "g++" ]; then export CXX="g++-4.7" CC="gcc-4.7"; fi
-  - if [ "$CXX" = "clang++" ]; then sudo apt-get install -qq --allow-unauthenticated clang-3.4; fi
-  - if [ "$CXX" = "clang++" ]; then export CXX="clang++-3.4" CC="clang-3.4"; fi
+  - if [ "$CXX" = "clang++" ]; then sudo apt-get install -qq --allow-unauthenticated clang-3.5; fi
+  - if [ "$CXX" = "clang++" ]; then export CXX="clang++-3.5" CC="clang-3.5"; fi
 script:
   - cmake .
   - make
