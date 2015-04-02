@@ -10,9 +10,9 @@ a regular expression, JSON, or field number.
 By default zindex creates an index of `file.gz.zindex` when asked to index `file.gz`.
 
 Example: create an index on lines matching a numeric regular expression. The capture group
-indicates the part that's to be indexed.
+indicates the part that's to be indexed, and the options show each line has a unique, numeric index.
 
-    $ zindex file.gz --regex 'id:([0-9]+)' --numeric
+    $ zindex file.gz --regex 'id:([0-9]+)' --numeric --unique
 
 ### Querying the index
 
@@ -24,3 +24,4 @@ Output the lines matching these indices:
 ## TODO
 
 Well, everything. Think about sorted access to the index?
+Verbosity/logging. Tests.

@@ -15,6 +15,7 @@
 #include <tuple>
 #include <vector>
 #include <unordered_map>
+#include "IndexSink.h"
 
 namespace {
 
@@ -66,21 +67,25 @@ struct ZStream {
     ZStream &operator=(ZStream &) = delete;
 };
 
-struct IndexHandler {
+struct IndexHandler : IndexSink {
+    LineIndexer &indexer;
+    uint64_t currentLine;
+    IndexHandler(LineIndexer &indexer) : indexer(indexer), currentLine(0) {}
     virtual ~IndexHandler() { }
 
-    virtual void index(uint64_t line, const char *index, size_t indexLength,
-            size_t offset) = 0;
+    void onLine(uint64_t lineNumber, const char *line, size_t length) {
+        currentLine = lineNumber;
+        indexer.index(*this, line, length);
+    }
 };
 
 struct NumericHandler : IndexHandler {
     Sqlite::Statement insert;
 
-    NumericHandler(Sqlite::Statement &&insert)
-            : insert(std::move(insert)) { }
+    NumericHandler(LineIndexer &indexer, Sqlite::Statement &&insert)
+            : IndexHandler(indexer), insert(std::move(insert)) { }
 
-    void index(uint64_t line, const char *index, size_t indexLength,
-            size_t offset) override {
+    void add(const char *index, size_t indexLength, size_t offset) override {
         auto initIndex = index;
         auto initLen = indexLength;
         int64_t val = 0;
@@ -98,14 +103,16 @@ struct NumericHandler : IndexHandler {
                 throw std::invalid_argument("Non-numeric: '"
                         + std::string(initIndex, initLen) + "'");
             val += *index - '0';
+            index++;
             indexLength--;
         }
         if (negative) val = -val;
         insert
                 .reset()
                 .bindInt64(":key", val)
-                .bindInt64(":line", line)
-                .bindInt64(":offset", offset);
+                .bindInt64(":line", currentLine)
+                .bindInt64(":offset", offset)
+                .step();
     }
 };
 
@@ -351,7 +358,8 @@ CREATE TABLE )" + table + R"((
 INSERT INTO )" + table + R"( VALUES(:key, :line, :offset)
 )");
         if (numeric) {
-            indexers.emplace(name, std::unique_ptr<IndexHandler>(new NumericHandler(std::move(inserter))));
+            indexers.emplace(name, std::unique_ptr<IndexHandler>(
+                    new NumericHandler(indexer, std::move(inserter))));
         } else {
             // TODO!
 //            indexers.emplace(name, indexer);
@@ -362,7 +370,9 @@ INSERT INTO )" + table + R"( VALUES(:key, :line, :offset)
             size_t lineNumber,
             size_t fileOffset,
             const char *line, size_t length) override {
-        // TODO: talk to each indexer in turn
+        for (auto &&pair : indexers) {
+            pair.second->onLine(lineNumber, line, length);
+        }
     }
 };
 

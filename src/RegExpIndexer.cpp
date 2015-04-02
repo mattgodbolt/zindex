@@ -18,5 +18,6 @@ void RegExpIndexer::index(IndexSink &sink, const char *line, size_t length) {
         sink.add(line + result[0].first, result[0].second - result[0].first, result[0].first);
     else if (result.size() == 2)
         sink.add(line + result[1].first, result[1].second - result[1].first, result[1].first);
-    throw std::runtime_error("Expected exactly one match (or one paren match)");
+    else
+        throw std::runtime_error("Expected exactly one match (or one paren match)");
 }
