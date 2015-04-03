@@ -3,10 +3,13 @@
 #include "File.h"
 
 #include <cstdint>
+#include <vector>
 #include <memory>
 
 class LineSink;
+
 class LineIndexer;
+
 class Sqlite;
 
 class Index {
@@ -22,6 +25,10 @@ public:
     ~Index();
 
     void getLine(uint64_t line, LineSink &sink);
+    void getLines(const std::vector<uint64_t> &lines, LineSink &sink);
+    void queryIndex(const std::string &index, const std::string &query, LineSink &sink);
+    void queryIndexMulti(const std::string &index, const std::vector<std::string> &queries,
+            LineSink &sink);
 
     class Builder {
         struct Impl;

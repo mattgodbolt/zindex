@@ -70,7 +70,9 @@ struct ZStream {
 struct IndexHandler : IndexSink {
     LineIndexer &indexer;
     uint64_t currentLine;
-    IndexHandler(LineIndexer &indexer) : indexer(indexer), currentLine(0) {}
+
+    IndexHandler(LineIndexer &indexer) : indexer(indexer), currentLine(0) { }
+
     virtual ~IndexHandler() { }
 
     void onLine(uint64_t lineNumber, const char *line, size_t length) {
@@ -119,39 +121,56 @@ struct NumericHandler : IndexHandler {
 }
 
 struct Index::Impl {
-    File compressed;
-    Sqlite db;
+    File compressed_;
+    Sqlite db_;
+    Sqlite::Statement lineQuery_;
 
     Impl(File &&fromCompressed, Sqlite &&db)
-            : compressed(std::move(fromCompressed)), db(std::move(db)) {
-    }
-
-    void getLine(uint64_t line, LineSink &sink) {
-        auto q = db.prepare(R"(
-SELECT offset, compressedOffset, uncompressedOffset, length, bitOffset, window
+            : compressed_(std::move(fromCompressed)), db_(std::move(db)),
+              lineQuery_(db_.prepare(R"(
+SELECT line, offset, compressedOffset, uncompressedOffset, length, bitOffset, window
 FROM LineOffsets, AccessPoints
 WHERE offset >= uncompressedOffset AND offset <= uncompressedEndOffset
 AND line = :line
-LIMIT 1)");
-        q.bindInt64(":line", line);
-        if (q.step() == true) return;
+LIMIT 1)")) { }
 
-        auto offset = q.columnInt64(0);
-        auto compressedOffset = q.columnInt64(1);
-        auto uncompressedOffset = q.columnInt64(2);
-        auto length = q.columnInt64(3);
-        auto bitOffset = q.columnInt64(4);
-        auto window = q.columnBlob(5);
+    void getLine(uint64_t line, LineSink &sink) {
+        lineQuery_.reset();
+        lineQuery_.bindInt64(":line", line);
+        if (lineQuery_.step()) return;
+        print(lineQuery_, sink);
+    }
+
+    void queryIndex(const std::string &index, const std::string &query, LineSink &sink) {
+        auto stmt = db_.prepare(R"(
+SELECT line FROM index_)" + index + R"(
+WHERE key = :query
+)");
+        stmt.bindString(":query", query);
+        for (;;) {
+            if (stmt.step()) return;
+            getLine(stmt.columnInt64(0), sink);
+        }
+    }
+
+    void print(Sqlite::Statement &q, LineSink &sink) {
+        auto line = q.columnInt64(0);
+        auto offset = q.columnInt64(1);
+        auto compressedOffset = q.columnInt64(2);
+        auto uncompressedOffset = q.columnInt64(3);
+        auto length = q.columnInt64(4);
+        auto bitOffset = q.columnInt64(5);
+        auto window = q.columnBlob(6);
 
         ZStream zs(ZStream::Type::Raw);
         uint8_t input[ChunkSize];
         uint8_t discardBuffer[WindowSize];
 
-        seek(compressed, bitOffset ? compressedOffset - 1 : compressedOffset);
+        seek(compressed_, bitOffset ? compressedOffset - 1 : compressedOffset);
         if (bitOffset) {
-            auto c = fgetc(compressed.get());
+            auto c = fgetc(compressed_.get());
             if (c == -1)
-                throw ZlibError(ferror(compressed.get()) ?
+                throw ZlibError(ferror(compressed_.get()) ?
                         Z_ERRNO : Z_DATA_ERROR);
             R(inflatePrime(&zs.stream, bitOffset, c >> (8 - bitOffset)));
         }
@@ -179,8 +198,8 @@ LIMIT 1)");
             do {
                 if (zs.stream.avail_in == 0) {
                     zs.stream.avail_in = ::fread(input, 1, sizeof(input),
-                            compressed.get());
-                    if (ferror(compressed.get())) throw ZlibError(Z_ERRNO);
+                            compressed_.get());
+                    if (ferror(compressed_.get())) throw ZlibError(Z_ERRNO);
                     if (zs.stream.avail_in == 0) throw ZlibError(Z_DATA_ERROR);
                     zs.stream.next_in = input;
                 }
@@ -406,6 +425,21 @@ Index Index::load(File &&fromCompressed, const char *indexFilename) {
 
 void Index::getLine(uint64_t line, LineSink &sink) {
     impl_->getLine(line, sink);
+}
+
+void Index::getLines(const std::vector<uint64_t> &lines, LineSink &sink) {
+    // TODO be a little smarter about this.
+    for (auto line : lines) impl_->getLine(line, sink);
+}
+
+void Index::queryIndex(const std::string &index, const std::string &query, LineSink &sink) {
+    impl_->queryIndex(index, query, sink);
+}
+
+void Index::queryIndexMulti(const std::string &index, const std::vector<std::string> &queries,
+        LineSink &sink) {
+    // TODO be a little smarter about this.
+    for (auto query : queries) impl_->queryIndex(index, query, sink);
 }
 
 Index::Builder::~Builder() {
