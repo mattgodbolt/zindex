@@ -5,6 +5,7 @@
 #include <tclap/CmdLine.h>
 
 #include <iostream>
+#include <stdexcept>
 
 using namespace std;
 using namespace TCLAP;
