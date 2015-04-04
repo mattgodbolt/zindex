@@ -22,6 +22,8 @@ set(SOURCE_FILES
     src/RegExp.cpp
     src/RegExpIndexer.cpp
     src/RegExpIndexer.h
+    src/LineIndexer.h
+    src/IndexSink.h
     ext/sqlite/sqlite3.c)
 
 set(TEST_FILES
@@ -31,7 +33,7 @@ set(TEST_FILES
     tests/SqliteTest.cpp
     tests/RegExpTest.cpp)
 
-add_library(libzindex ${SOURCE_FILES} src/LineIndexer.h src/IndexSink.h)
+add_library(libzindex ${SOURCE_FILES})
 
 add_executable(zindex src/zindex.cpp)
 target_link_libraries(zindex libzindex ${ZLIB_LIBRARIES} dl)

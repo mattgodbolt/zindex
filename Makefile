@@ -9,3 +9,6 @@ all: build/Makefile
 
 test: build/Makefile all
 	$(MAKE) -C build test
+
+clean:
+	rm -rf build
