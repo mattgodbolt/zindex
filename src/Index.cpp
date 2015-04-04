@@ -22,14 +22,6 @@ namespace {
 constexpr auto IndexEvery = 32 * 1024 * 1024;
 constexpr auto WindowSize = 32768;
 constexpr auto ChunkSize = 16384;
-constexpr auto Version = 1;
-
-void makeWindow(uint8_t *out, const uint8_t *in, uint64_t left) {
-    if (left)
-        memcpy(out, in + WindowSize - left, left);
-    if (left < WindowSize)
-        memcpy(out + left, in, WindowSize - left);
-}
 
 void seek(File &f, uint64_t pos) {
     auto err = ::fseek(f.get(), pos, SEEK_SET);
@@ -45,6 +37,25 @@ struct ZlibError : std::runtime_error {
 
 void R(int zlibErr) {
     if (zlibErr != Z_OK) throw ZlibError(zlibErr);
+}
+
+size_t makeWindow(uint8_t *out, size_t outSize, const uint8_t *in, uint64_t left) {
+    uint8_t temp[WindowSize];
+    // Could compress directly into out if I wasn't so lazy.
+    if (left)
+        memcpy(temp, in + WindowSize - left, left);
+    if (left < WindowSize)
+        memcpy(temp + left, in, WindowSize - left);
+    uLongf destLen = outSize;
+    R(compress2(out, &destLen, temp, WindowSize, 9));
+    return destLen;
+}
+
+void uncompress(const std::vector<uint8_t> &compressed, uint8_t *to, size_t len) {
+    uLongf destLen = len;
+    R(::uncompress(to, &len, &compressed[0], compressed.size()));
+    if (destLen != len)
+        throw std::runtime_error("Unable to decompress a full window");
 }
 
 struct ZStream {
@@ -147,7 +158,7 @@ SELECT line FROM index_)" + index + R"(
 WHERE key = :query
 )");
         stmt.bindString(":query", query);
-        for (;;) {
+        for (; ;) {
             if (stmt.step()) return;
             getLine(stmt.columnInt64(0), sink);
         }
@@ -160,7 +171,8 @@ WHERE key = :query
         auto uncompressedOffset = q.columnInt64(3);
         auto length = q.columnInt64(4);
         auto bitOffset = q.columnInt64(5);
-        auto window = q.columnBlob(6);
+        uint8_t window[WindowSize];
+        uncompress(q.columnBlob(6), window, WindowSize);
 
         ZStream zs(ZStream::Type::Raw);
         uint8_t input[ChunkSize];
@@ -325,12 +337,12 @@ INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
                         addIndex.step();
                         addIndex.reset();
                     }
-                    uint8_t apWindow[WindowSize];
-                    makeWindow(apWindow, window, zs.stream.avail_out);
+                    uint8_t apWindow[compressBound(WindowSize)];
+                    auto size = makeWindow(apWindow, sizeof(apWindow), window, zs.stream.avail_out);
                     addIndex.bindInt64(":uncompressedOffset", totalOut);
                     addIndex.bindInt64(":compressedOffset", totalIn);
                     addIndex.bindInt64(":bitOffset", zs.stream.data_type & 0x7);
-                    addIndex.bindBlob(":window", apWindow, WindowSize);
+                    addIndex.bindBlob(":window", apWindow, size);
                     last = totalOut;
                 }
             } while (zs.stream.avail_in);
