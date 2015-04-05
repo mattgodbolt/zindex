@@ -23,5 +23,8 @@ Output the lines matching these indices:
 
 ## TODO
 
-Well, everything. Think about sorted access to the index?
-Verbosity/logging. Tests.
+* Verbosity/logging
+* Support for non-numeric indices
+* Integration tests
+* Optimizations: for multiple accesses in order, can skip the re-scan from the last index point and just keep reading continuously.
+
