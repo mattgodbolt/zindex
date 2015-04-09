@@ -447,7 +447,6 @@ void Index::getLine(uint64_t line, LineSink &sink) {
 }
 
 void Index::getLines(const std::vector<uint64_t> &lines, LineSink &sink) {
-    // TODO be a little smarter about this.
     for (auto line : lines) impl_->getLine(line, sink);
 }
 

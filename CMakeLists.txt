@@ -44,8 +44,10 @@ set(TEST_FILES
     tests/catch.hpp
     tests/LineFinderTest.cpp
     tests/test_main.cpp
-    tests/SqliteTest.cpp
-    tests/RegExpTest.cpp)
+    tests/SqliteTest.cpp 
+    tests/RegExpTest.cpp
+    tests/TempDir.h
+    tests/TempDir.cpp)
 
 add_library(libzindex ${SOURCE_FILES})
 
