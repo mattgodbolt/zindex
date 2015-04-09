@@ -1,3 +1,4 @@
+[![Build Status](https://travis-ci.org/mattgodbolt/zindex.svg?branch=master)](https://travis-ci.org/mattgodbolt/zindex)
 # zindex - create an index on a compressed text file
 
 Under development; example usage below subject to change.
