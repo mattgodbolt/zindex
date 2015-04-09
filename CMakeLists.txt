@@ -9,11 +9,18 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -pthread")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -pthread")
 
 option(UseLTO "Use link-time optimization" OFF)
+option(Static "Statically link" OFF)
+
 if(UseLTO)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -flto")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -flto")
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fuse-linker-plugin -fuse-ld=gold")
 endif(UseLTO)
+
+if(Static)
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static -static-libgcc -static-libstdc++")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DSQLITE_OMIT_LOAD_EXTENSION=1")
+endif(Static)
 
 set(SOURCE_FILES
     src/File.h
