@@ -14,7 +14,9 @@ namespace {
 
 struct PrintSink : LineSink {
     bool printLineNum;
-    PrintSink(bool printLineNum) : printLineNum(printLineNum) {}
+
+    PrintSink(bool printLineNum) : printLineNum(printLineNum) { }
+
     void onLine(size_t l, size_t, const char *line, size_t length) override {
         if (printLineNum) cout << l << ":";
         cout << string(line, length) << endl;
@@ -36,9 +38,11 @@ int Main(int argc, const char *argv[]) {
             "input-file", "Read input from <file>", true, "", "file", cmd);
     UnlabeledMultiArg<string> query(
             "query", "Query for <query>", false, "<query>", cmd);
-    SwitchArg lineMode("l", "line", "Treat query as a series of line numbers to print", cmd);
+    SwitchArg lineMode("l", "line",
+                       "Treat query as a series of line numbers to print", cmd);
     SwitchArg verbose("v", "verbose", "Be more verbose", cmd);
-    SwitchArg lineNum("n", "line-number", "Prefix each line of output with its line number");
+    SwitchArg lineNum("n", "line-number",
+                      "Prefix each line of output with its line number");
 
     cmd.parse(argc, argv);
 

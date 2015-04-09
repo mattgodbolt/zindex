@@ -26,9 +26,11 @@ public:
 
     void getLine(uint64_t line, LineSink &sink);
     void getLines(const std::vector<uint64_t> &lines, LineSink &sink);
-    void queryIndex(const std::string &index, const std::string &query, LineSink &sink);
-    void queryIndexMulti(const std::string &index, const std::vector<std::string> &queries,
-            LineSink &sink);
+    void queryIndex(const std::string &index, const std::string &query,
+                    LineSink &sink);
+    void queryIndexMulti(const std::string &index,
+                         const std::vector<std::string> &queries,
+                         LineSink &sink);
 
     class Builder {
         struct Impl;
@@ -37,10 +39,10 @@ public:
         Builder(File &&from, const std::string &indexFilename);
         ~Builder();
         void addIndexer(const std::string &name,
-                const std::string &creation,
-                bool numeric,
-                bool unique,
-                LineIndexer &indexer);
+                        const std::string &creation,
+                        bool numeric,
+                        bool unique,
+                        LineIndexer &indexer);
 
         void build();
     };

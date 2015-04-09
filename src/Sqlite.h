@@ -13,7 +13,9 @@ public:
     ~Sqlite();
     Sqlite(const Sqlite &) = delete;
     Sqlite &operator=(const Sqlite &) = delete;
+
     Sqlite(Sqlite &&other) : sql_(other.sql_) { other.sql_ = nullptr; }
+
     Sqlite &operator=(Sqlite &&other) {
         if (this != &other) {
             close();
@@ -34,7 +36,8 @@ public:
         friend class Sqlite;
 
     public:
-        Statement() : statement_(nullptr) {}
+        Statement() : statement_(nullptr) { }
+
         ~Statement() {
             destroy();
         }
@@ -46,8 +49,10 @@ public:
 
         Statement &reset();
         Statement &bindInt64(const std::string &param, int64_t data);
-        Statement &bindBlob(const std::string &param, const void *data, size_t length);
-        Statement &bindString(const std::string &param, const std::string &string);
+        Statement &bindBlob(const std::string &param, const void *data,
+                            size_t length);
+        Statement &bindString(const std::string &param,
+                              const std::string &string);
 
         bool step();
 

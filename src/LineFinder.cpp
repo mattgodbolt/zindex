@@ -13,7 +13,8 @@ LineFinder::LineFinder(LineSink &sink)
 void LineFinder::add(const uint8_t *data, uint64_t length, bool last) {
     auto endData = data + length;
     while (data < endData) {
-        auto lineEnd = static_cast<const uint8_t *>(memchr(data, '\n', endData - data));
+        auto lineEnd = static_cast<const uint8_t *>(memchr(data, '\n',
+                                                           endData - data));
         if (lineEnd) {
             lineData(data, lineEnd);
             data = lineEnd + 1;
@@ -33,12 +34,12 @@ void LineFinder::lineData(const uint8_t *begin, const uint8_t *end) {
     uint64_t length;
     if (lineBuffer_.empty()) {
         sink_.onLine(lineOffsets_.size(), currentLineOffset_,
-                reinterpret_cast<const char *>(begin), end - begin);
+                     reinterpret_cast<const char *>(begin), end - begin);
         length = (end - begin) + 1;
     } else {
         std::copy(begin, end, std::back_inserter(lineBuffer_));
         sink_.onLine(lineOffsets_.size(), currentLineOffset_,
-                &lineBuffer_[0], lineBuffer_.size());
+                     &lineBuffer_[0], lineBuffer_.size());
         length = lineBuffer_.size() + 1;
         lineBuffer_.clear();
     }

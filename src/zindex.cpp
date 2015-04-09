@@ -17,22 +17,24 @@ int Main(int argc, const char *argv[]) {
     SwitchArg numeric("n", "numeric", "Assume the index is numeric", cmd);
     SwitchArg unique("u", "unique", "Assume each line's index is unique", cmd);
     ValueArg<string> regex("", "regex", "Create an index using <regex>", true,
-            "", "regex", cmd);
+                           "", "regex", cmd);
 
     cmd.parse(argc, argv);
 
     File in(fopen(inputFile.getValue().c_str(), "rb"));
     if (in.get() == nullptr) {
         cerr << "could not open " << inputFile.getValue() << " for reading"
-                << endl;
+        << endl;
         return 1;
     }
 
     auto outputFile = inputFile.getValue() + ".zindex";
     Index::Builder builder(move(in), outputFile);
     if (regex.isSet()) {
-        RegExpIndexer indexer(regex.getValue()); // arguably we should pass uniq_ptr<> to builder?
-        builder.addIndexer("default", regex.getValue(), numeric.isSet(), unique.isSet(), indexer);
+        RegExpIndexer indexer(
+                regex.getValue()); // arguably we should pass uniq_ptr<> to builder?
+        builder.addIndexer("default", regex.getValue(), numeric.isSet(),
+                           unique.isSet(), indexer);
         builder.build();
     } else {
         // Not possible at the moment.

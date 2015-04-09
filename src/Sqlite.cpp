@@ -30,8 +30,8 @@ Sqlite::~Sqlite() {
 void Sqlite::open(const std::string &filename, bool readOnly) {
     close();
     R(sqlite3_open_v2(filename.c_str(), &sql_,
-            readOnly ? SQLITE_OPEN_READONLY :
-                    SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nullptr));
+                      readOnly ? SQLITE_OPEN_READONLY :
+                      SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nullptr));
     R(sqlite3_extended_result_codes(sql_, true));
 }
 
@@ -50,7 +50,7 @@ void Sqlite::Statement::destroy() {
 Sqlite::Statement Sqlite::prepare(const std::string &sql) const {
     Sqlite::Statement statement;
     R(sqlite3_prepare_v2(sql_, sql.c_str(), sql.size(),
-            &statement.statement_, nullptr), sql);
+                         &statement.statement_, nullptr), sql);
     return std::move(statement);
 }
 
@@ -84,13 +84,16 @@ Sqlite::Statement &Sqlite::Statement::bindBlob(
     return *this;
 }
 
-Sqlite::Statement &Sqlite::Statement::bindInt64(const std::string &param, int64_t data) {
+Sqlite::Statement &Sqlite::Statement::bindInt64(const std::string &param,
+                                                int64_t data) {
     R(sqlite3_bind_int64(statement_, P(param), data));
     return *this;
 }
 
-Sqlite::Statement &Sqlite::Statement::bindString(const std::string &param, const std::string &data) {
-    R(sqlite3_bind_text(statement_, P(param), data.c_str(), data.size(), SQLITE_TRANSIENT));
+Sqlite::Statement &Sqlite::Statement::bindString(const std::string &param,
+                                                 const std::string &data) {
+    R(sqlite3_bind_text(statement_, P(param), data.c_str(), data.size(),
+                        SQLITE_TRANSIENT));
     return *this;
 }
 
