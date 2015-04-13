@@ -19,9 +19,9 @@
 
 namespace {
 
-constexpr auto DefaultIndexEvery = 32 * 1024 * 1024;
-constexpr auto WindowSize = 32768;
-constexpr auto ChunkSize = 16384;
+constexpr auto DefaultIndexEvery = 32 * 1024 * 1024u;
+constexpr auto WindowSize = 32768u;
+constexpr auto ChunkSize = 16384u;
 
 void seek(File &f, uint64_t pos) {
     auto err = ::fseek(f.get(), pos, SEEK_SET);
