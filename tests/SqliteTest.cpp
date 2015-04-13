@@ -16,13 +16,7 @@ TEST_CASE("opens databases", "[Sqlite]") {
         sqlite.open(dbPath, false);
     }
     SECTION("fails to open a non-existent db") {
-        auto threw = false;
-        try {
-            sqlite.open(dbPath, true);
-        } catch (...) {
-            threw = true;
-        }
-        REQUIRE(threw);
+        REQUIRE_THROWS(sqlite.open(dbPath, true));
     }
 
     SECTION("reopens a new db") {
