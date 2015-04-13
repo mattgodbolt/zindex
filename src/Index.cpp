@@ -19,7 +19,7 @@
 
 namespace {
 
-constexpr auto IndexEvery = 32 * 1024 * 1024;
+constexpr auto DefaultIndexEvery = 32 * 1024 * 1024;
 constexpr auto WindowSize = 32768;
 constexpr auto ChunkSize = 16384;
 
@@ -242,6 +242,7 @@ struct Index::Builder::Impl : LineSink {
     std::string indexFilename;
     Sqlite db;
     Sqlite::Statement addIndexSql;
+    uint64_t indexEvery = DefaultIndexEvery;
     std::unordered_map<std::string, std::unique_ptr<IndexHandler>> indexers;
 
     Impl(File &&from, const std::string &indexFilename)
@@ -331,7 +332,7 @@ INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
                 if (ret == Z_STREAM_END)
                     break;
                 auto sinceLast = totalOut - last;
-                bool needsIndex = sinceLast > IndexEvery || totalOut == 0;
+                bool needsIndex = sinceLast > indexEvery || totalOut == 0;
                 bool endOfBlock = zs.stream.data_type & 0x80;
                 bool lastBlockInStream = zs.stream.data_type & 0x40;
                 if (endOfBlock && !lastBlockInStream && needsIndex) {
@@ -419,22 +420,28 @@ Index::Builder::Builder(File &&from, const std::string &indexFilename)
     impl_->init();
 }
 
-void Index::Builder::addIndexer(
+Index::Builder &Index::Builder::addIndexer(
         const std::string &name,
         const std::string &creation,
         bool numeric,
         bool unique,
         LineIndexer &indexer) {
     impl_->addIndexer(name, creation, numeric, unique, indexer);
+    return *this;
+}
+
+Index::Builder &Index::Builder::indexEvery(uint64_t bytes) {
+    impl_->indexEvery = bytes;
+    return *this;
 }
 
 void Index::Builder::build() {
     impl_->build();
 }
 
-Index Index::load(File &&fromCompressed, const char *indexFilename) {
+Index Index::load(File &&fromCompressed, const std::string &indexFilename) {
     Sqlite db;
-    db.open(indexFilename, true);
+    db.open(indexFilename.c_str(), true);
 
     std::unique_ptr<Impl> impl(new Impl(std::move(fromCompressed),
                                         std::move(db)));

@@ -2,7 +2,6 @@
 
 #include <cstdlib>
 #include <cstring>
-#include <string>
 #include <stdexcept>
 #include <unistd.h>
 #include <dirent.h>

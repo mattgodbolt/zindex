@@ -38,7 +38,8 @@ public:
     public:
         Builder(File &&from, const std::string &indexFilename);
         ~Builder();
-        void addIndexer(const std::string &name,
+        Builder &indexEvery(uint64_t bytes);
+        Builder &addIndexer(const std::string &name,
                         const std::string &creation,
                         bool numeric,
                         bool unique,
@@ -47,5 +48,5 @@ public:
         void build();
     };
 
-    static Index load(File &&fromCompressed, const char *indexFilename);
+    static Index load(File &&fromCompressed, const std::string &indexFilename);
 };

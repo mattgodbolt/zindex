@@ -49,7 +49,8 @@ set(TEST_FILES
     tests/SqliteTest.cpp 
     tests/RegExpTest.cpp
     tests/TempDir.h
-    tests/TempDir.cpp)
+    tests/TempDir.cpp
+    tests/IndexTest.cpp)
 
 add_library(libzindex ${SOURCE_FILES})
 
