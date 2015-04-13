@@ -10,6 +10,9 @@ class RegExpIndexer : public LineIndexer {
 public:
     RegExpIndexer(const std::string &regex);
     void index(IndexSink &sink, const char *line, size_t length) override;
+
+private:
+    void onMatch(IndexSink &sink, const char *line, const RegExp::Match &match);
 };
 
 

@@ -89,8 +89,32 @@ struct IndexHandler : IndexSink {
     virtual ~IndexHandler() { }
 
     void onLine(uint64_t lineNumber, const char *line, size_t length) {
-        currentLine = lineNumber;
-        indexer.index(*this, line, length);
+        try {
+            currentLine = lineNumber;
+            indexer.index(*this, line, length);
+        } catch (const std::exception &e) {
+            throw std::runtime_error(
+                    "Failed to index line " + std::to_string(currentLine)
+                    + ": '" + std::string(line, length) +
+                    "' - " + e.what());
+        }
+    }
+};
+
+struct AlphaHandler : IndexHandler {
+    Sqlite::Statement insert;
+
+    AlphaHandler(LineIndexer &indexer, Sqlite::Statement &&insert)
+            : IndexHandler(indexer), insert(std::move(insert)) { }
+
+    void add(const char *index, size_t indexLength, size_t offset) override {
+        auto key = std::string(index, indexLength);
+        insert
+                .reset()
+                .bindString(":key", key)
+                .bindInt64(":line", currentLine)
+                .bindInt64(":offset", offset)
+                .step();
     }
 };
 
@@ -166,6 +190,12 @@ WHERE key = :query
             if (stmt.step()) return;
             getLine(stmt.columnInt64(0), sink);
         }
+    }
+
+    size_t indexSize(const std::string &index) const {
+        auto stmt = db_.prepare("SELECT COUNT(*) FROM index_" + index);
+        if (stmt.step()) return 0;
+        return stmt.columnInt64(0);
     }
 
     void print(Sqlite::Statement &q, LineSink &sink) {
@@ -378,7 +408,7 @@ INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
     void addIndexer(const std::string &name, const std::string &creation,
                     bool numeric, bool unique, LineIndexer &indexer) {
         auto table = "index_" + name;
-        std::string type = numeric ? "INTEGER" : "STRING";
+        std::string type = numeric ? "INTEGER" : "TEXT";
         if (unique) type += " PRIMARY KEY";
         db.exec(R"(
 CREATE TABLE )" + table + R"((
@@ -400,8 +430,8 @@ INSERT INTO )" + table + R"( VALUES(:key, :line, :offset)
             indexers.emplace(name, std::unique_ptr<IndexHandler>(
                     new NumericHandler(indexer, std::move(inserter))));
         } else {
-            // TODO!
-//            indexers.emplace(name, indexer);
+            indexers.emplace(name, std::unique_ptr<IndexHandler>(
+                    new AlphaHandler(indexer, std::move(inserter))));
         }
     }
 
@@ -470,4 +500,8 @@ void Index::queryIndexMulti(const std::string &index,
 }
 
 Index::Builder::~Builder() {
+}
+
+size_t Index::indexSize(const std::string &index) const {
+    return impl_->indexSize(index);
 }

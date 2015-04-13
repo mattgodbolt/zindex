@@ -31,6 +31,7 @@ public:
     void queryIndexMulti(const std::string &index,
                          const std::vector<std::string> &queries,
                          LineSink &sink);
+    size_t indexSize(const std::string &index) const;
 
     class Builder {
         struct Impl;

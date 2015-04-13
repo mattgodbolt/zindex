@@ -13,14 +13,24 @@ void RegExpIndexer::index(IndexSink &sink, const char *line, size_t length) {
     RegExp::Matches result;
     // multiple matches?
     if (!re_.exec(std::string(line, length), result)) return;
-
     if (result.size() == 1)
-        sink.add(line + result[0].first, result[0].second - result[0].first,
-                 result[0].first);
+        onMatch(sink, line, result[0]);
     else if (result.size() == 2)
-        sink.add(line + result[1].first, result[1].second - result[1].first,
-                 result[1].first);
+        onMatch(sink, line, result[1]);
     else
         throw std::runtime_error(
                 "Expected exactly one match (or one paren match)");
+}
+
+void RegExpIndexer::onMatch(IndexSink &sink, const char *line,
+                            const RegExp::Match &match) {
+    try {
+        sink.add(line + match.first, match.second - match.first,
+                 match.first);
+    } catch (const std::exception &e) {
+        throw std::runtime_error(
+                "Error handling index match '" +
+                std::string(line + match.first, match.second - match.first) +
+                "' - " + e.what());
+    }
 }
