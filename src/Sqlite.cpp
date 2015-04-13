@@ -64,6 +64,7 @@ Sqlite::Statement &Sqlite::Statement::operator=(Sqlite::Statement &&other) {
     destroy();
     statement_ = other.statement_;
     other.statement_ = nullptr;
+    return *this;
 }
 
 Sqlite::Statement &Sqlite::Statement::reset() {
