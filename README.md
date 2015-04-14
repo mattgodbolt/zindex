@@ -14,7 +14,8 @@ previous log to get to each record.
 Enter `zindex` which builds an index and, crucially, also stores checkpoints along the way
 of the compressed file which allows fast random access. Pulling out single lines by either
 line number of by an index entry is then almost instant, even for huge files. The indices
-themselves are small too, typically ~10% of the compressed file size.
+themselves are small too, typically ~10% of the compressed file size for a simple unique
+numeric index.
 
 ## Creating an index
 
@@ -34,10 +35,13 @@ Output the lines matching these indices:
 
     $ zq file.gz 1023 4443 554
 
+It's also possible to output by line number, so to print lines 1 and 1000 from a file:
 
-## TODO
+    $ zq file.gz --line 1 1000
+
+### TODO
 
 * Verbosity/logging
 * Support for multiple indices
-* Support for context lines (before/after/around a la grep)
+* Support for context lines (before/after/around a la grep) -B, -A, -C
 * Optimizations: for multiple accesses in order, can skip the re-scan from the last index point and just keep reading continuously.
