@@ -23,8 +23,8 @@ public:
 
     using Match = std::pair<size_t, size_t>;
     using Matches = std::vector<Match>;
-    bool exec(const std::string &against, Matches &result);
-    bool exec(const char *against, Matches &result);
+    bool exec(const std::string &against, Matches &result, size_t offset = 0);
+    bool exec(const char *against, Matches &result, bool bol=true);
 
 private:
     void release();

@@ -48,6 +48,7 @@ set(TEST_FILES
     tests/test_main.cpp
     tests/SqliteTest.cpp 
     tests/RegExpTest.cpp
+    tests/RegExpIndexerTest.cpp
     tests/TempDir.h
     tests/TempDir.cpp
     tests/IndexTest.cpp)

@@ -10,9 +10,13 @@ class RegExpIndexer : public LineIndexer {
 public:
     RegExpIndexer(const std::string &regex);
     void index(IndexSink &sink, const char *line, size_t length) override;
+    void index(IndexSink &sink, const std::string &line) {
+        index(sink, line.c_str(), line.size());
+    }
 
 private:
-    void onMatch(IndexSink &sink, const char *line, const RegExp::Match &match);
+    void onMatch(IndexSink &sink, const std::string &line, size_t offset,
+                 const RegExp::Match &match);
 };
 
 

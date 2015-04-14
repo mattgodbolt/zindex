@@ -20,14 +20,16 @@ void RegExp::release() {
     owned_ = false;
 }
 
-bool RegExp::exec(const std::string &match, std::vector<Match> &result) {
-    return exec(match.c_str(), result);
+bool RegExp::exec(const std::string &match, std::vector<Match> &result,
+                  size_t offset) {
+    return exec(match.c_str() + offset, result, offset == 0);
 }
 
-bool RegExp::exec(const char *against, RegExp::Matches &result) {
+bool RegExp::exec(const char *against, RegExp::Matches &result, bool bol) {
     constexpr auto MaxMatches = 20u;
     regmatch_t matches[MaxMatches];
-    auto res = regexec(&re_, against, MaxMatches, matches, 0);
+    auto res = regexec(&re_, against, MaxMatches, matches,
+                       bol ? 0 : REG_NOTBOL);
     if (res == REG_NOMATCH) return false;
     R(res);
     result.clear();

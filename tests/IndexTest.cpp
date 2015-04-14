@@ -45,12 +45,12 @@ TEST_CASE("indexes files", "[Index]") {
                 .build();
         Index index = Index::load(File(fopen(testFile.c_str(), "rb")),
                                   testFile + ".zindex");
-        REQUIRE(index.indexSize("default") == 65536);
+        CHECK(index.indexSize("default") == 65536);
         auto CheckLine = [ & ](uint64_t line, const std::string &expected) {
             CaptureSink cs;
             index.getLine(line, cs);
-            REQUIRE(!cs.captured.empty());
-            REQUIRE(cs.captured.at(0) == expected);
+            REQUIRE(cs.captured.size() == 1);
+            CHECK(cs.captured.at(0) == expected);
         };
         CheckLine(5, "Line 5 - Hex 5 - Mod 5");
         CheckLine(65536, "Line 65536 - Hex 10000 - Mod 0");
@@ -62,13 +62,24 @@ TEST_CASE("indexes files", "[Index]") {
         auto CheckIndex = [ & ](uint64_t line, const std::string &expected) {
             CaptureSink cs;
             index.queryIndex("default", std::to_string(line), cs);
-            REQUIRE(cs.captured.at(0) == expected);
+            REQUIRE(cs.captured.size() == 1);
+            CHECK(cs.captured.at(0) == expected);
         };
         CheckIndex(5, "Line 5 - Hex 5 - Mod 5");
         CheckIndex(65536, "Line 65536 - Hex 10000 - Mod 0");
         CheckIndex(1, "Line 1 - Hex 1 - Mod 1");
         CheckIndex(2, "Line 2 - Hex 2 - Mod 2");
         CheckIndex(3, "Line 3 - Hex 3 - Mod 3");
+    }
+
+    SECTION("should throw if created unique and there's duplicates") {
+        Index::Builder builder(File(fopen(testFile.c_str(), "rb")),
+                               testFile + ".zindex");
+        RegExpIndexer indexer("Mod ([0-9]+)");
+        CHECK_THROWS(
+                builder.addIndexer("default", "blah", true, true, indexer)
+                        .indexEvery(256 * 1024)
+                        .build());
     }
 
     SECTION("non-unique numerical") {
@@ -80,14 +91,15 @@ TEST_CASE("indexes files", "[Index]") {
                 .build();
         Index index = Index::load(File(fopen(testFile.c_str(), "rb")),
                                   testFile + ".zindex");
-        REQUIRE(index.indexSize("default") == 65536);
+        CHECK(index.indexSize("default") == 65536);
         auto CheckIndex = [ & ](uint64_t mod) {
             CaptureSink cs;
             index.queryIndex("default", std::to_string(mod), cs);
-            REQUIRE(cs.captured.size() == 256);
+            CHECK(cs.captured.size() == 256);
             auto expectedLine = mod;
             for (auto &cap : cs.captured) {
                 unsigned int lineGot, hexGot, modGot;
+                INFO("mod " << mod);
                 REQUIRE(sscanf(cap.c_str(), "Line %u - Hex %x - Mod %u",
                                &lineGot, &hexGot, &modGot) == 3);
                 REQUIRE(lineGot == expectedLine);
@@ -112,14 +124,14 @@ TEST_CASE("indexes files", "[Index]") {
                 .build();
         Index index = Index::load(File(fopen(testFile.c_str(), "rb")),
                                   testFile + ".zindex");
-        REQUIRE(index.indexSize("default") == 65536);
+        CHECK(index.indexSize("default") == 65536);
         auto CheckIndex = [ & ](const std::string &hex,
                                 const std::string &expected) {
             CaptureSink cs;
             index.queryIndex("default", hex, cs);
             INFO("index " << "'" << hex << "' expected '" << expected << "'");
-            REQUIRE(!cs.captured.empty());
-            REQUIRE(cs.captured.at(0) == expected);
+            REQUIRE(cs.captured.size() == 1);
+            CHECK(cs.captured.at(0) == expected);
         };
         CheckIndex("5", "Line 5 - Hex 5 - Mod 5");
         CheckIndex("10000", "Line 65536 - Hex 10000 - Mod 0");
@@ -127,5 +139,30 @@ TEST_CASE("indexes files", "[Index]") {
         CheckIndex("2", "Line 2 - Hex 2 - Mod 2");
         CheckIndex("3", "Line 3 - Hex 3 - Mod 3");
         CheckIndex("a", "Line 10 - Hex a - Mod 10");
+    }
+
+    SECTION("non-unique alpha") {
+        Index::Builder builder(File(fopen(testFile.c_str(), "rb")),
+                               testFile + ".zindex");
+        RegExpIndexer indexer("\\w+");
+        builder
+                .addIndexer("default", "blah", false, false, indexer)
+                .indexEvery(256 * 1024)
+                .build();
+        Index index = Index::load(File(fopen(testFile.c_str(), "rb")),
+                                  testFile + ".zindex");
+        CHECK(index.indexSize("default") == 65536 * 6);
+        auto CheckIndex = [ & ](const std::string &query, size_t expected) {
+            CaptureSink cs;
+            index.queryIndex("default", query, cs);
+            INFO("query " << "'" << query << "'");
+            CHECK(cs.captured.size() == expected);
+        };
+        CheckIndex("Line", 65536);
+        CheckIndex("Hex", 65536);
+        CheckIndex("Mod", 65536);
+        CheckIndex("5", 256 /* the mods */ + 1 /* Line 5 */ + 1 /* Hex 5 */);
+        CheckIndex("a", 1); // the one and only hex
+        CheckIndex("65536", 1);
     }
 }

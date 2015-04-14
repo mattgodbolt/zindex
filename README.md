@@ -38,9 +38,6 @@ Output the lines matching these indices:
 ## TODO
 
 * Verbosity/logging
-* Support for non-numeric indices
 * Support for multiple indices
 * Support for context lines (before/after/around a la grep)
-* Integration tests
 * Optimizations: for multiple accesses in order, can skip the re-scan from the last index point and just keep reading continuously.
-
