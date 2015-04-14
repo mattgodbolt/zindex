@@ -1,7 +1,7 @@
 [![Build Status](https://travis-ci.org/mattgodbolt/zindex.svg?branch=master)](https://travis-ci.org/mattgodbolt/zindex)
-# zindex - create an index on a compressed text file
 
-Under development; example usage below subject to change.
+`zindex` creates and queries an index on a compressed, line-based text file in a
+time- and space-efficient way.
 
 ### The itch I had
 
@@ -27,21 +27,28 @@ By default zindex creates an index of `file.gz.zindex` when asked to index `file
 Example: create an index on lines matching a numeric regular expression. The capture group
 indicates the part that's to be indexed, and the options show each line has a unique, numeric index.
 
-    $ zindex file.gz --regex 'id:([0-9]+)' --numeric --unique
+```bash
+$ zindex file.gz --regex 'id:([0-9]+)' --numeric --unique
+```
 
 ## Querying the index
 
-Output the lines matching these indices:
+The `zq` program is used to query an index.  It's given the name of the compressed file and a list of queries. For example:
 
-    $ zq file.gz 1023 4443 554
+```bash
+$ zq file.gz 1023 4443 554
+```
 
 It's also possible to output by line number, so to print lines 1 and 1000 from a file:
 
-    $ zq file.gz --line 1 1000
+```bash
+$ zq file.gz --line 1 1000
+```
 
 ### TODO
 
 * Verbosity/logging
 * Support for multiple indices
-* Support for context lines (before/after/around a la grep) -B, -A, -C
+* Support for context lines (before/after/around a la grep) `-B`, `-A`, `-C`
+* Support field number and JSON index building
 * Optimizations: for multiple accesses in order, can skip the re-scan from the last index point and just keep reading continuously.
