@@ -45,11 +45,8 @@ It's also possible to output by line number, so to print lines 1 and 1000 from a
 $ zq file.gz --line 1 1000
 ```
 
-### TODO
+### Issues and feature requests
 
-* Support for multiple indices
-* Support for context lines (before/after/around a la grep) `-B`, `-A`, `-C`
-* Support field number and JSON index building
-* Optimizations: for multiple accesses in order, can skip the re-scan from the last index point and just keep reading continuously.
-* Notice when the underlying compressed file changes underneath the index
-* Configurable index filename
+See the [issue tracker](https://github.com/mattgodbolt/zindex/issues) for TODOs and known bugs. Please raise bugs there, and feel free to submit suggestions there also.
+
+Feel free to [contact me](mailto:matt@godbolt.org) if you prefer email over bug trackers.
