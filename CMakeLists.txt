@@ -60,6 +60,7 @@ set(TEST_FILES
     tests/LogTest.cpp)
 
 add_library(libzindex ${SOURCE_FILES})
+set_target_properties(libzindex PROPERTIES OUTPUT_NAME zindex)
 
 add_executable(zindex src/zindex.cpp)
 target_link_libraries(zindex libzindex ${ZLIB_LIBRARIES} dl)
