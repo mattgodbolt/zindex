@@ -1,6 +1,7 @@
 #include "File.h"
 #include "Index.h"
 #include "LineSink.h"
+#include "StdoutLog.h"
 
 #include <tclap/CmdLine.h>
 
@@ -41,10 +42,19 @@ int Main(int argc, const char *argv[]) {
     SwitchArg lineMode("l", "line",
                        "Treat query as a series of line numbers to print", cmd);
     SwitchArg verbose("v", "verbose", "Be more verbose", cmd);
+    SwitchArg debug("", "debug", "Be even more verbose", cmd);
+    SwitchArg forceColour("", "colour", "Use colour even on non-TTY", cmd);
+    SwitchArg forceColor("", "color", "Use color even on non-TTY", cmd);
     SwitchArg lineNum("n", "line-number",
                       "Prefix each line of output with its line number");
 
     cmd.parse(argc, argv);
+
+    StdoutLog log(
+            debug.isSet() ? Log::Severity::Debug : verbose.isSet()
+                                                   ? Log::Severity::Info
+                                                   : Log::Severity::Warning,
+            forceColour.isSet() || forceColor.isSet());
 
     auto compressedFile = inputFile.getValue();
     File in(fopen(compressedFile.c_str(), "rb"));
@@ -54,7 +64,7 @@ int Main(int argc, const char *argv[]) {
     }
 
     auto indexFile = inputFile.getValue() + ".zindex";
-    auto index = Index::load(move(in), indexFile.c_str());
+    auto index = Index::load(log, move(in), indexFile.c_str());
 
     PrintSink sink(lineNum.isSet());
     if (lineMode.isSet()) {

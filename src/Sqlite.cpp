@@ -4,6 +4,7 @@
 #include "Sqlite.h"
 #include "SqliteError.h"
 #include <cstring>
+#include "Log.h"
 
 namespace {
 
@@ -19,8 +20,8 @@ void R(int result, const std::string &context) {
 
 }
 
-Sqlite::Sqlite()
-        : sql_(nullptr) {
+Sqlite::Sqlite(Log &log)
+        : log_(&log), sql_(nullptr) {
 }
 
 Sqlite::~Sqlite() {
@@ -29,6 +30,8 @@ Sqlite::~Sqlite() {
 
 void Sqlite::open(const std::string &filename, bool readOnly) {
     close();
+    log_->info("Opening database ", filename, " in ",
+               readOnly ? "read-only" : "read-write", " mode");
     R(sqlite3_open_v2(filename.c_str(), &sql_,
                       readOnly ? SQLITE_OPEN_READONLY :
                       SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nullptr));
@@ -36,8 +39,10 @@ void Sqlite::open(const std::string &filename, bool readOnly) {
 }
 
 void Sqlite::close() {
-    if (sql_)
+    if (sql_) {
+        log_->info("Closing database");
         sqlite3_close(sql_);
+    }
     sql_ = nullptr;
 }
 
@@ -48,13 +53,15 @@ void Sqlite::Statement::destroy() {
 }
 
 Sqlite::Statement Sqlite::prepare(const std::string &sql) const {
-    Sqlite::Statement statement;
+    Sqlite::Statement statement(*log_);
+    log_->debug("Preparing statement ", sql);
     R(sqlite3_prepare_v2(sql_, sql.c_str(), sql.size(),
                          &statement.statement_, nullptr), sql);
     return std::move(statement);
 }
 
 Sqlite::Statement::Statement(Statement &&other) {
+    log_ = other.log_;
     statement_ = other.statement_;
     other.statement_ = nullptr;
 }
@@ -62,6 +69,7 @@ Sqlite::Statement::Statement(Statement &&other) {
 Sqlite::Statement &Sqlite::Statement::operator=(Sqlite::Statement &&other) {
     if (this == &other) return *this;
     destroy();
+    log_ = other.log_;
     statement_ = other.statement_;
     other.statement_ = nullptr;
     return *this;
@@ -130,5 +138,6 @@ std::vector<uint8_t> Sqlite::Statement::columnBlob(int index) const {
 }
 
 void Sqlite::exec(const std::string &sql) {
+    log_->debug("Executing ", sql);
     R(sqlite3_exec(sql_, sql.c_str(), nullptr, nullptr, nullptr), sql);
 }

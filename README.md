@@ -47,8 +47,9 @@ $ zq file.gz --line 1 1000
 
 ### TODO
 
-* Verbosity/logging
 * Support for multiple indices
 * Support for context lines (before/after/around a la grep) `-B`, `-A`, `-C`
 * Support field number and JSON index building
 * Optimizations: for multiple accesses in order, can skip the re-scan from the last index point and just keep reading continuously.
+* Notice when the underlying compressed file changes underneath the index
+* Configurable index filename

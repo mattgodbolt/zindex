@@ -6,10 +6,12 @@
 #include <vector>
 #include "SqliteError.h"
 #include "TempDir.h"
+#include "CaptureLog.h"
 
 TEST_CASE("opens databases", "[Sqlite]") {
     TempDir tempDir;
-    Sqlite sqlite;
+    CaptureLog log;
+    Sqlite sqlite(log);
     auto dbPath = tempDir.path + "/db.sqlite";
 
     SECTION("creates a new db") {
@@ -22,14 +24,15 @@ TEST_CASE("opens databases", "[Sqlite]") {
     SECTION("reopens a new db") {
         sqlite.open(dbPath, false);
         sqlite.close();
-        Sqlite anotherSqlite;
+        Sqlite anotherSqlite(log);
         anotherSqlite.open(dbPath, true);
     }
 }
 
 TEST_CASE("prepares statements", "[Sqlite]") {
     TempDir tempDir;
-    Sqlite sqlite;
+    CaptureLog log;
+    Sqlite sqlite(log);
     auto dbPath = tempDir.path + "/db.sqlite";
     sqlite.open(dbPath, false);
 
@@ -48,7 +51,8 @@ TEST_CASE("prepares statements", "[Sqlite]") {
 
 TEST_CASE("executes statements", "[Sqlite]") {
     TempDir tempDir;
-    Sqlite sqlite;
+    CaptureLog log;
+    Sqlite sqlite(log);
     auto dbPath = tempDir.path + "/db.sqlite";
     sqlite.open(dbPath, false);
 
@@ -76,7 +80,8 @@ TEST_CASE("executes statements", "[Sqlite]") {
 
 TEST_CASE("handles binds and blobs", "[Sqlite]") {
     TempDir tempDir;
-    Sqlite sqlite;
+    CaptureLog log;
+    Sqlite sqlite(log);
     auto dbPath = tempDir.path + "/db.sqlite";
     sqlite.open(dbPath, false);
 

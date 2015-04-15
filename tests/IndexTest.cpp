@@ -5,6 +5,7 @@
 #include "catch.hpp"
 #include "TempDir.h"
 #include "LineSink.h"
+#include "CaptureLog.h"
 
 namespace {
 
@@ -21,6 +22,7 @@ struct CaptureSink : LineSink {
 
 TEST_CASE("indexes files", "[Index]") {
     TempDir tempDir;
+    CaptureLog log;
     auto testFile = tempDir.path + "/test.log";
     {
         std::ofstream fileOut(testFile);
@@ -36,14 +38,14 @@ TEST_CASE("indexes files", "[Index]") {
 //        REQUIRE(system(("gzip -l " + testFile).c_str()) == 0);
     }
     SECTION("unique numerical") {
-        Index::Builder builder(File(fopen(testFile.c_str(), "rb")),
+        Index::Builder builder(log, File(fopen(testFile.c_str(), "rb")),
                                testFile + ".zindex");
         RegExpIndexer indexer("^Line ([0-9]+)");
         builder
                 .addIndexer("default", "blah", true, true, indexer)
                 .indexEvery(256 * 1024)
                 .build();
-        Index index = Index::load(File(fopen(testFile.c_str(), "rb")),
+        Index index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
                                   testFile + ".zindex");
         CHECK(index.indexSize("default") == 65536);
         auto CheckLine = [ & ](uint64_t line, const std::string &expected) {
@@ -73,7 +75,7 @@ TEST_CASE("indexes files", "[Index]") {
     }
 
     SECTION("should throw if created unique and there's duplicates") {
-        Index::Builder builder(File(fopen(testFile.c_str(), "rb")),
+        Index::Builder builder(log, File(fopen(testFile.c_str(), "rb")),
                                testFile + ".zindex");
         RegExpIndexer indexer("Mod ([0-9]+)");
         CHECK_THROWS(
@@ -83,13 +85,13 @@ TEST_CASE("indexes files", "[Index]") {
     }
 
     SECTION("non-unique numerical") {
-        Index::Builder builder(File(fopen(testFile.c_str(), "rb")),
+        Index::Builder builder(log, File(fopen(testFile.c_str(), "rb")),
                                testFile + ".zindex");
         RegExpIndexer indexer("Mod ([0-9]+)");
         builder.addIndexer("default", "blah", true, false, indexer)
                 .indexEvery(256 * 1024)
                 .build();
-        Index index = Index::load(File(fopen(testFile.c_str(), "rb")),
+        Index index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
                                   testFile + ".zindex");
         CHECK(index.indexSize("default") == 65536);
         auto CheckIndex = [ & ](uint64_t mod) {
@@ -115,14 +117,14 @@ TEST_CASE("indexes files", "[Index]") {
     }
 
     SECTION("unique alpha") {
-        Index::Builder builder(File(fopen(testFile.c_str(), "rb")),
+        Index::Builder builder(log, File(fopen(testFile.c_str(), "rb")),
                                testFile + ".zindex");
         RegExpIndexer indexer("Hex ([0-9a-f]+)");
         builder
                 .addIndexer("default", "blah", false, true, indexer)
                 .indexEvery(256 * 1024)
                 .build();
-        Index index = Index::load(File(fopen(testFile.c_str(), "rb")),
+        Index index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
                                   testFile + ".zindex");
         CHECK(index.indexSize("default") == 65536);
         auto CheckIndex = [ & ](const std::string &hex,
@@ -142,14 +144,14 @@ TEST_CASE("indexes files", "[Index]") {
     }
 
     SECTION("non-unique alpha") {
-        Index::Builder builder(File(fopen(testFile.c_str(), "rb")),
+        Index::Builder builder(log, File(fopen(testFile.c_str(), "rb")),
                                testFile + ".zindex");
         RegExpIndexer indexer("\\w+");
         builder
                 .addIndexer("default", "blah", false, false, indexer)
                 .indexEvery(256 * 1024)
                 .build();
-        Index index = Index::load(File(fopen(testFile.c_str(), "rb")),
+        Index index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
                                   testFile + ".zindex");
         CHECK(index.indexSize("default") == 65536 * 6);
         auto CheckIndex = [ & ](const std::string &query, size_t expected) {

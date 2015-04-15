@@ -6,6 +6,8 @@
 #include <vector>
 #include <memory>
 
+class Log;
+
 class LineSink;
 
 class LineIndexer;
@@ -37,17 +39,18 @@ public:
         struct Impl;
         std::unique_ptr<Impl> impl_;
     public:
-        Builder(File &&from, const std::string &indexFilename);
+        Builder(Log &log, File &&from, const std::string &indexFilename);
         ~Builder();
         Builder &indexEvery(uint64_t bytes);
         Builder &addIndexer(const std::string &name,
-                        const std::string &creation,
-                        bool numeric,
-                        bool unique,
-                        LineIndexer &indexer);
+                            const std::string &creation,
+                            bool numeric,
+                            bool unique,
+                            LineIndexer &indexer);
 
         void build();
     };
 
-    static Index load(File &&fromCompressed, const std::string &indexFilename);
+    static Index load(Log &log, File &&fromCompressed,
+                      const std::string &indexFilename);
 };

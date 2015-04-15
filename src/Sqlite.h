@@ -5,20 +5,25 @@
 #include <sqlite3.h>
 #include <vector>
 
+class Log;
+
 class Sqlite {
+    Log *log_;
     sqlite3 *sql_;
 
 public:
-    Sqlite();
+    Sqlite(Log &log);
     ~Sqlite();
     Sqlite(const Sqlite &) = delete;
     Sqlite &operator=(const Sqlite &) = delete;
 
-    Sqlite(Sqlite &&other) : sql_(other.sql_) { other.sql_ = nullptr; }
+    Sqlite(Sqlite &&other) : log_(other.log_), sql_(other.sql_)
+        { other.sql_ = nullptr; }
 
     Sqlite &operator=(Sqlite &&other) {
         if (this != &other) {
             close();
+            log_ = other.log_;
             sql_ = other.sql_;
             other.sql_ = nullptr;
         }
@@ -29,6 +34,7 @@ public:
     void close();
 
     class Statement {
+        Log *log_;
         sqlite3_stmt *statement_;
 
         void destroy();
@@ -36,7 +42,7 @@ public:
         friend class Sqlite;
 
     public:
-        Statement() : statement_(nullptr) { }
+        Statement(Log &log) : log_(&log), statement_(nullptr) { }
 
         ~Statement() {
             destroy();

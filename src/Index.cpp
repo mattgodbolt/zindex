@@ -16,6 +16,8 @@
 #include <vector>
 #include <unordered_map>
 #include "IndexSink.h"
+#include "Log.h"
+#include "StringView.h"
 
 namespace {
 
@@ -81,16 +83,19 @@ struct ZStream {
 };
 
 struct IndexHandler : IndexSink {
+    Log &log;
     LineIndexer &indexer;
     uint64_t currentLine;
 
-    IndexHandler(LineIndexer &indexer) : indexer(indexer), currentLine(0) { }
+    IndexHandler(Log &log, LineIndexer &indexer) :
+            log(log), indexer(indexer), currentLine(0) { }
 
     virtual ~IndexHandler() { }
 
     void onLine(uint64_t lineNumber, const char *line, size_t length) {
         try {
             currentLine = lineNumber;
+            log.debug("Indexing line '", StringView(line, length), "'");
             indexer.index(*this, line, length);
         } catch (const std::exception &e) {
             throw std::runtime_error(
@@ -104,11 +109,12 @@ struct IndexHandler : IndexSink {
 struct AlphaHandler : IndexHandler {
     Sqlite::Statement insert;
 
-    AlphaHandler(LineIndexer &indexer, Sqlite::Statement &&insert)
-            : IndexHandler(indexer), insert(std::move(insert)) { }
+    AlphaHandler(Log &log, LineIndexer &indexer, Sqlite::Statement &&insert)
+            : IndexHandler(log, indexer), insert(std::move(insert)) { }
 
     void add(const char *index, size_t indexLength, size_t offset) override {
         auto key = std::string(index, indexLength);
+        log.debug("Found key '", key, "'");
         insert
                 .reset()
                 .bindString(":key", key)
@@ -121,8 +127,8 @@ struct AlphaHandler : IndexHandler {
 struct NumericHandler : IndexHandler {
     Sqlite::Statement insert;
 
-    NumericHandler(LineIndexer &indexer, Sqlite::Statement &&insert)
-            : IndexHandler(indexer), insert(std::move(insert)) { }
+    NumericHandler(Log &log, LineIndexer &indexer, Sqlite::Statement &&insert)
+            : IndexHandler(log, indexer), insert(std::move(insert)) { }
 
     void add(const char *index, size_t indexLength, size_t offset) override {
         auto initIndex = index;
@@ -147,6 +153,7 @@ struct NumericHandler : IndexHandler {
             indexLength--;
         }
         if (negative) val = -val;
+        log.debug("Found key ", val);
         insert
                 .reset()
                 .bindInt64(":key", val)
@@ -159,12 +166,14 @@ struct NumericHandler : IndexHandler {
 }
 
 struct Index::Impl {
+    Log &log_;
     File compressed_;
     Sqlite db_;
     Sqlite::Statement lineQuery_;
 
-    Impl(File &&fromCompressed, Sqlite &&db)
-            : compressed_(std::move(fromCompressed)), db_(std::move(db)),
+    Impl(Log &log, File &&fromCompressed, Sqlite &&db)
+            : log_(log), compressed_(std::move(fromCompressed)),
+              db_(std::move(db)),
               lineQuery_(db_.prepare(R"(
 SELECT line, offset, compressedOffset, uncompressedOffset, length, bitOffset, window
 FROM LineOffsets, AccessPoints
@@ -268,6 +277,7 @@ Index::~Index() { }
 Index::Index(std::unique_ptr<Impl> &&imp) : impl_(std::move(imp)) { }
 
 struct Index::Builder::Impl : LineSink {
+    Log &log;
     File from;
     std::string indexFilename;
     Sqlite db;
@@ -275,11 +285,14 @@ struct Index::Builder::Impl : LineSink {
     uint64_t indexEvery = DefaultIndexEvery;
     std::unordered_map<std::string, std::unique_ptr<IndexHandler>> indexers;
 
-    Impl(File &&from, const std::string &indexFilename)
-            : from(std::move(from)), indexFilename(indexFilename) { }
+    Impl(Log &log, File &&from, const std::string &indexFilename)
+            : log(log), from(std::move(from)), indexFilename(indexFilename),
+              db(log), addIndexSql(log) { }
 
     void init() {
-        unlink(indexFilename.c_str());
+        if (unlink(indexFilename.c_str()) == 0) {
+            log.warn("Rebuilding existing index ", indexFilename);
+        }
         db.open(indexFilename, false);
 
         db.exec(R"(PRAGMA synchronous = OFF)");
@@ -428,10 +441,10 @@ INSERT INTO )" + table + R"( VALUES(:key, :line, :offset)
 )");
         if (numeric) {
             indexers.emplace(name, std::unique_ptr<IndexHandler>(
-                    new NumericHandler(indexer, std::move(inserter))));
+                    new NumericHandler(log, indexer, std::move(inserter))));
         } else {
             indexers.emplace(name, std::unique_ptr<IndexHandler>(
-                    new AlphaHandler(indexer, std::move(inserter))));
+                    new AlphaHandler(log, indexer, std::move(inserter))));
         }
     }
 
@@ -445,8 +458,8 @@ INSERT INTO )" + table + R"( VALUES(:key, :line, :offset)
     }
 };
 
-Index::Builder::Builder(File &&from, const std::string &indexFilename)
-        : impl_(new Impl(std::move(from), indexFilename)) {
+Index::Builder::Builder(Log &log, File &&from, const std::string &indexFilename)
+        : impl_(new Impl(log, std::move(from), indexFilename)) {
     impl_->init();
 }
 
@@ -469,11 +482,13 @@ void Index::Builder::build() {
     impl_->build();
 }
 
-Index Index::load(File &&fromCompressed, const std::string &indexFilename) {
-    Sqlite db;
+Index Index::load(Log &log, File &&fromCompressed,
+                  const std::string &indexFilename) {
+    Sqlite db(log);
     db.open(indexFilename.c_str(), true);
 
-    std::unique_ptr<Impl> impl(new Impl(std::move(fromCompressed),
+    std::unique_ptr<Impl> impl(new Impl(log,
+                                        std::move(fromCompressed),
                                         std::move(db)));
 
     return Index(std::move(impl));

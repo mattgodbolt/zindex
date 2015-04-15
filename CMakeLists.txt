@@ -41,6 +41,10 @@ set(SOURCE_FILES
     src/LineIndexer.h
     src/IndexSink.h
     src/Log.h
+    src/StdoutLog.h
+    src/StdoutLog.cpp
+    src/StringView.cpp
+    src/StringView.h
     ext/sqlite/sqlite3.c)
 
 set(TEST_FILES
