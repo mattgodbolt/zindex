@@ -40,6 +40,7 @@ set(SOURCE_FILES
     src/RegExpIndexer.h
     src/LineIndexer.h
     src/IndexSink.h
+    src/Log.h
     ext/sqlite/sqlite3.c)
 
 set(TEST_FILES
@@ -51,7 +52,8 @@ set(TEST_FILES
     tests/RegExpIndexerTest.cpp
     tests/TempDir.h
     tests/TempDir.cpp
-    tests/IndexTest.cpp)
+    tests/IndexTest.cpp
+    tests/LogTest.cpp)
 
 add_library(libzindex ${SOURCE_FILES})
 
