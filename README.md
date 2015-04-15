@@ -19,7 +19,7 @@ numeric index.
 
 ## Creating an index
 
-zindex needs to be told what part of each line constitutes the index. This can be done by
+`zindex` needs to be told what part of each line constitutes the index. This can be done by
 a regular expression currently (JSON and field number coming soon).
 
 By default zindex creates an index of `file.gz.zindex` when asked to index `file.gz`.
@@ -43,6 +43,26 @@ It's also possible to output by line number, so to print lines 1 and 1000 from a
 
 ```bash
 $ zq file.gz --line 1 1000
+```
+
+## Building from source
+
+`zindex` uses CMake for its basic building (though has a bootstrapping `Makefile`), and requires a C++11 compatible compiler (GCC 4.8 or above and clang 3.4 and above). It also requires `zlib`. With the relevant compiler available, building ought to be as simple as:
+
+```bash
+$ git clone https://github.com/mattgodbolt/zindex.git
+$ cd zindex
+$ make
+```
+
+Binaries are left in `build/`.
+
+Additionally a static binary can be built if you're happy to dip your toe into CMake:
+
+```bash
+$ cd path/to/build/directory
+$ cmake path/to/zindex/checkout/dir -DStatic:BOOL=On
+$ make
 ```
 
 ### Issues and feature requests
