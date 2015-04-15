@@ -5,14 +5,13 @@ time- and space-efficient way.
 
 ### The itch I had
 
-Basic gist is I have a ton of multigigabye text log files gzipped and archived
-on an NFS mount and I'd like to be able to access lines of that file by an index. There's
-a unique key on each line, and a simple regex can pull that out. However, to pull out a
-particular record requires zgrep, which then takes ages to seek through the gigabytes of
-previous log to get to each record.
+I have many multigigabyte text gzipped log files and I'd like to be able to find data in them by an index. 
+There's a key on each line that a simple regex can pull out. However, to find a
+particular record requires `zgrep`, which takes ages as it has to seek through
+gigabytes of previous data to get to each record.
 
-Enter `zindex` which builds an index and, crucially, also stores checkpoints along the way
-of the compressed file which allows fast random access. Pulling out single lines by either
+Enter `zindex` which builds an index and also stores decompression checkpoints along the way
+which allows lightning fast random access. Pulling out single lines by either
 line number of by an index entry is then almost instant, even for huge files. The indices
 themselves are small too, typically ~10% of the compressed file size for a simple unique
 numeric index.
