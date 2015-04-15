@@ -47,7 +47,8 @@ int Main(int argc, const char *argv[]) {
     SwitchArg forceColor("", "color", "Use color even on non-TTY", cmd);
     SwitchArg lineNum("n", "line-number",
                       "Prefix each line of output with its line number");
-
+    ValueArg<string> indexArg("", "index-file", "Use index from <index-file> "
+            "(default <file>.zindex)", false, "", "index", cmd);
     cmd.parse(argc, argv);
 
     StdoutLog log(
@@ -63,7 +64,8 @@ int Main(int argc, const char *argv[]) {
         return 1;
     }
 
-    auto indexFile = inputFile.getValue() + ".zindex";
+    auto indexFile = indexArg.isSet() ? indexArg.getValue() :
+                     inputFile.getValue() + ".zindex";
     auto index = Index::load(log, move(in), indexFile.c_str());
 
     PrintSink sink(lineNum.isSet());

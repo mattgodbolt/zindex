@@ -22,6 +22,10 @@ int Main(int argc, const char *argv[]) {
     SwitchArg unique("u", "unique", "Assume each line's index is unique", cmd);
     ValueArg<string> regex("", "regex", "Create an index using <regex>", true,
                            "", "regex", cmd);
+    ValueArg<string> indexFilename("", "index-file",
+                                   "Store index in <index-file> "
+                                           "(default <file>.zindex)", false, "",
+                                   "index-file", cmd);
     cmd.parse(argc, argv);
 
     StdoutLog log(
@@ -37,7 +41,8 @@ int Main(int argc, const char *argv[]) {
         return 1;
     }
 
-    auto outputFile = inputFile.getValue() + ".zindex";
+    auto outputFile = indexFilename.isSet() ? indexFilename.getValue() :
+                      inputFile.getValue() + ".zindex";
     Index::Builder builder(log, move(in), outputFile);
     if (regex.isSet()) {
         RegExpIndexer indexer(
