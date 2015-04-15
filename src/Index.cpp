@@ -317,8 +317,8 @@ CREATE TABLE LineOffsets(
 
         db.exec(R"(
 CREATE TABLE Indexes(
-    name STRING PRIMARY KEY,
-    creationString STRING,
+    name TEXT PRIMARY KEY,
+    creationString TEXT,
     isNumeric INTEGER
 ))");
         addIndexSql = db.prepare(R"(
