@@ -18,12 +18,16 @@
 #include "IndexSink.h"
 #include "Log.h"
 #include "StringView.h"
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 namespace {
 
 constexpr auto DefaultIndexEvery = 32 * 1024 * 1024u;
 constexpr auto WindowSize = 32768u;
 constexpr auto ChunkSize = 16384u;
+constexpr auto Version = 1;
 
 void seek(File &f, uint64_t pos) {
     auto err = ::fseek(f.get(), pos, SEEK_SET);
@@ -170,6 +174,7 @@ struct Index::Impl {
     File compressed_;
     Sqlite db_;
     Sqlite::Statement lineQuery_;
+    Index::Metadata metadata_;
 
     Impl(Log &log, File &&fromCompressed, Sqlite &&db)
             : log_(log), compressed_(std::move(fromCompressed)),
@@ -179,7 +184,48 @@ SELECT line, offset, compressedOffset, uncompressedOffset, length, bitOffset, wi
 FROM LineOffsets, AccessPoints
 WHERE offset >= uncompressedOffset AND offset <= uncompressedEndOffset
 AND line = :line
-LIMIT 1)")) { }
+LIMIT 1)")) {
+        auto queryMeta = db_.prepare("SELECT key, value FROM Metadata");
+        for (; ;) {
+            if (queryMeta.step()) break;
+            auto key = queryMeta.columnString(0);
+            auto value = queryMeta.columnString(1);
+            log_.debug("Metadata: ", key, " = ", value);
+            metadata_.emplace(key, value);
+        }
+    }
+
+    void init(bool force) {
+        struct stat stats;
+        if (fstat(fileno(compressed_.get()), &stats) != 0) {
+            throw std::runtime_error("Unable to get file stats"); // todo errno
+        }
+        auto sizeStr = std::to_string(stats.st_size);
+        auto timeStr = std::to_string(stats.st_mtime);
+        log_.debug("Opened compressde file of size ", sizeStr, " mtime ",
+                   timeStr);
+        if (metadata_.find("compressedSize") != metadata_.end()
+            && sizeStr != metadata_.at("compressedSize")) {
+            if (force) {
+                log_.warn("Expected compressed size mismatched, "
+                                  "continuing anyway (", stats.st_size,
+                          " vs expected ",
+                          metadata_.at("compressedSize"), ")");
+            } else {
+                throw std::runtime_error(
+                        "Compressed size changed since index was built");
+            }
+        }
+        if (metadata_.find("compressedModTime") != metadata_.end()
+            && timeStr != metadata_.at("compressedModTime")) {
+            if (force) {
+                log_.warn("Expected compressed timestamp, continuing anyway");
+            } else {
+                throw std::runtime_error(
+                        "Compressed file has been modified since index was built");
+            }
+        }
+    }
 
     void getLine(uint64_t line, LineSink &sink) {
         lineQuery_.reset();
@@ -279,15 +325,19 @@ Index::Index(std::unique_ptr<Impl> &&imp) : impl_(std::move(imp)) { }
 struct Index::Builder::Impl : LineSink {
     Log &log;
     File from;
+    std::string fromPath;
     std::string indexFilename;
     Sqlite db;
     Sqlite::Statement addIndexSql;
+    Sqlite::Statement addMetaSql;
     uint64_t indexEvery = DefaultIndexEvery;
     std::unordered_map<std::string, std::unique_ptr<IndexHandler>> indexers;
 
-    Impl(Log &log, File &&from, const std::string &indexFilename)
-            : log(log), from(std::move(from)), indexFilename(indexFilename),
-              db(log), addIndexSql(log) { }
+    Impl(Log &log, File &&from, const std::string &fromPath,
+         const std::string &indexFilename)
+            : log(log), from(std::move(from)), fromPath(fromPath),
+              indexFilename(indexFilename),
+              db(log), addIndexSql(log), addMetaSql(log) { }
 
     void init() {
         if (unlink(indexFilename.c_str()) == 0) {
@@ -307,6 +357,21 @@ CREATE TABLE AccessPoints(
     bitOffset INTEGER,
     window BLOB
 ))");
+
+        db.exec(R"(
+CREATE TABLE Metadata(
+    key TEXT PRIMARY KEY,
+    value TEXT
+))");
+        addMetaSql = db.prepare("INSERT INTO Metadata VALUES(:key, :value)");
+        addMeta("version", std::to_string(Version));
+        addMeta("compressedFile", fromPath);
+        struct stat stats;
+        if (fstat(fileno(from.get()), &stats) != 0) {
+            throw std::runtime_error("Unable to get file stats"); // todo errno
+        }
+        addMeta("compressedSize", std::to_string(stats.st_size));
+        addMeta("compressedModTime", std::to_string(stats.st_mtime));
 
         db.exec(R"(
 CREATE TABLE LineOffsets(
@@ -381,18 +446,20 @@ INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
                 if (endOfBlock && !lastBlockInStream && needsIndex) {
                     if (totalOut != 0) {
                         // Flush previous information.
-                        addIndex.bindInt64(":uncompressedEndOffset",
-                                           totalOut - 1);
-                        addIndex.step();
+                        addIndex
+                                .bindInt64(":uncompressedEndOffset",
+                                           totalOut - 1)
+                                .step();
                         addIndex.reset();
                     }
                     uint8_t apWindow[compressBound(WindowSize)];
                     auto size = makeWindow(apWindow, sizeof(apWindow), window,
                                            zs.stream.avail_out);
-                    addIndex.bindInt64(":uncompressedOffset", totalOut);
-                    addIndex.bindInt64(":compressedOffset", totalIn);
-                    addIndex.bindInt64(":bitOffset", zs.stream.data_type & 0x7);
-                    addIndex.bindBlob(":window", apWindow, size);
+                    addIndex
+                            .bindInt64(":uncompressedOffset", totalOut)
+                            .bindInt64(":compressedOffset", totalIn)
+                            .bindInt64(":bitOffset", zs.stream.data_type & 0x7)
+                            .bindBlob(":window", apWindow, size);
                     last = totalOut;
                 }
             } while (zs.stream.avail_in);
@@ -400,22 +467,33 @@ INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
 
         if (totalOut != 0) {
             // Flush last block.
-            addIndex.bindInt64(":uncompressedEndOffset", totalOut - 1);
-            addIndex.step();
+            addIndex
+                    .bindInt64(":uncompressedEndOffset", totalOut - 1)
+                    .step();
         }
 
         finder.add(window, WindowSize - zs.stream.avail_out, true);
         const auto &lineOffsets = finder.lineOffsets();
         for (size_t line = 0; line < lineOffsets.size() - 1; ++line) {
-            addLine.reset();
-            addLine.bindInt64(":line", line + 1);
-            addLine.bindInt64(":offset", lineOffsets[line]);
-            addLine.bindInt64(":length",
-                              lineOffsets[line + 1] - lineOffsets[line]);
-            addLine.step();
+            addLine
+                    .reset()
+                    .bindInt64(":line", line + 1)
+                    .bindInt64(":offset", lineOffsets[line])
+                    .bindInt64(":length",
+                               lineOffsets[line + 1] - lineOffsets[line])
+                    .step();
         }
 
         db.exec(R"(END TRANSACTION)");
+    }
+
+    void addMeta(const std::string &key, const std::string &value) {
+        log.debug("Adding metadata ", key, " = ", value);
+        addMetaSql
+                .reset()
+                .bindString(":key", key)
+                .bindString(":value", value)
+                .step();
     }
 
     void addIndexer(const std::string &name, const std::string &creation,
@@ -456,10 +534,12 @@ INSERT INTO )" + table + R"( VALUES(:key, :line, :offset)
             pair.second->onLine(lineNumber, line, length);
         }
     }
+
 };
 
-Index::Builder::Builder(Log &log, File &&from, const std::string &indexFilename)
-        : impl_(new Impl(log, std::move(from), indexFilename)) {
+Index::Builder::Builder(Log &log, File &&from, const std::string &fromPath,
+                        const std::string &indexFilename)
+        : impl_(new Impl(log, std::move(from), fromPath, indexFilename)) {
     impl_->init();
 }
 
@@ -483,14 +563,15 @@ void Index::Builder::build() {
 }
 
 Index Index::load(Log &log, File &&fromCompressed,
-                  const std::string &indexFilename) {
+                  const std::string &indexFilename,
+                  bool forceLoad) {
     Sqlite db(log);
     db.open(indexFilename.c_str(), true);
 
     std::unique_ptr<Impl> impl(new Impl(log,
                                         std::move(fromCompressed),
                                         std::move(db)));
-
+    impl->init(forceLoad);
     return Index(std::move(impl));
 }
 
@@ -519,4 +600,8 @@ Index::Builder::~Builder() {
 
 size_t Index::indexSize(const std::string &index) const {
     return impl_->indexSize(index);
+}
+
+const Index::Metadata &Index::getMetadata() const {
+    return impl_->metadata_;
 }

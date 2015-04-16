@@ -6,9 +6,19 @@
 #include <tclap/CmdLine.h>
 
 #include <iostream>
+#include <limits.h>
 
 using namespace std;
 using namespace TCLAP;
+
+namespace {
+
+string getRealPath(const string &relPath) {
+    char realPathBuf[PATH_MAX];
+    return string(realpath(relPath.c_str(), realPathBuf));
+}
+
+}
 
 int Main(int argc, const char *argv[]) {
     CmdLine cmd("Create indices in a compressed text file");
@@ -34,8 +44,11 @@ int Main(int argc, const char *argv[]) {
                                                    : Log::Severity::Warning,
             forceColour.isSet() || forceColor.isSet());
 
-    File in(fopen(inputFile.getValue().c_str(), "rb"));
+    auto realPath = getRealPath(inputFile.getValue());
+    File in(fopen(realPath.c_str(), "rb"));
     if (in.get() == nullptr) {
+        log.info("Unable to open ", inputFile.getValue(), " (as ", realPath,
+                 ")");
         cerr << "could not open " << inputFile.getValue() << " for reading"
         << endl;
         return 1;
@@ -43,7 +56,7 @@ int Main(int argc, const char *argv[]) {
 
     auto outputFile = indexFilename.isSet() ? indexFilename.getValue() :
                       inputFile.getValue() + ".zindex";
-    Index::Builder builder(log, move(in), outputFile);
+    Index::Builder builder(log, move(in), realPath, outputFile);
     if (regex.isSet()) {
         RegExpIndexer indexer(
                 regex.getValue()); // arguably we should pass uniq_ptr<> to builder?
@@ -52,7 +65,7 @@ int Main(int argc, const char *argv[]) {
         builder.build();
     } else {
         // Not possible at the moment.
-        cerr << "Regex must be set" << std::endl;
+        cerr << "Regex must be set" << endl;
     }
 
     return 0;
@@ -61,7 +74,7 @@ int Main(int argc, const char *argv[]) {
 int main(int argc, const char *argv[]) {
     try {
         return Main(argc, argv);
-    } catch (const std::exception &e) {
+    } catch (const exception &e) {
         cerr << e.what() << endl;
         return 1;
     }

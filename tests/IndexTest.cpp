@@ -6,6 +6,9 @@
 #include "TempDir.h"
 #include "LineSink.h"
 #include "CaptureLog.h"
+#include <unordered_map>
+#include <unistd.h>
+#include <sys/stat.h>
 
 namespace {
 
@@ -39,6 +42,7 @@ TEST_CASE("indexes files", "[Index]") {
     }
     SECTION("unique numerical") {
         Index::Builder builder(log, File(fopen(testFile.c_str(), "rb")),
+                               testFile,
                                testFile + ".zindex");
         RegExpIndexer indexer("^Line ([0-9]+)");
         builder
@@ -46,7 +50,7 @@ TEST_CASE("indexes files", "[Index]") {
                 .indexEvery(256 * 1024)
                 .build();
         Index index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
-                                  testFile + ".zindex");
+                                  testFile + ".zindex", false);
         CHECK(index.indexSize("default") == 65536);
         auto CheckLine = [ & ](uint64_t line, const std::string &expected) {
             CaptureSink cs;
@@ -76,6 +80,7 @@ TEST_CASE("indexes files", "[Index]") {
 
     SECTION("should throw if created unique and there's duplicates") {
         Index::Builder builder(log, File(fopen(testFile.c_str(), "rb")),
+                               testFile,
                                testFile + ".zindex");
         RegExpIndexer indexer("Mod ([0-9]+)");
         CHECK_THROWS(
@@ -86,13 +91,13 @@ TEST_CASE("indexes files", "[Index]") {
 
     SECTION("non-unique numerical") {
         Index::Builder builder(log, File(fopen(testFile.c_str(), "rb")),
-                               testFile + ".zindex");
+                               testFile, testFile + ".zindex");
         RegExpIndexer indexer("Mod ([0-9]+)");
         builder.addIndexer("default", "blah", true, false, indexer)
                 .indexEvery(256 * 1024)
                 .build();
         Index index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
-                                  testFile + ".zindex");
+                                  testFile + ".zindex", false);
         CHECK(index.indexSize("default") == 65536);
         auto CheckIndex = [ & ](uint64_t mod) {
             CaptureSink cs;
@@ -118,6 +123,7 @@ TEST_CASE("indexes files", "[Index]") {
 
     SECTION("unique alpha") {
         Index::Builder builder(log, File(fopen(testFile.c_str(), "rb")),
+                               testFile,
                                testFile + ".zindex");
         RegExpIndexer indexer("Hex ([0-9a-f]+)");
         builder
@@ -125,7 +131,7 @@ TEST_CASE("indexes files", "[Index]") {
                 .indexEvery(256 * 1024)
                 .build();
         Index index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
-                                  testFile + ".zindex");
+                                  testFile + ".zindex", false);
         CHECK(index.indexSize("default") == 65536);
         auto CheckIndex = [ & ](const std::string &hex,
                                 const std::string &expected) {
@@ -145,6 +151,7 @@ TEST_CASE("indexes files", "[Index]") {
 
     SECTION("non-unique alpha") {
         Index::Builder builder(log, File(fopen(testFile.c_str(), "rb")),
+                               testFile,
                                testFile + ".zindex");
         RegExpIndexer indexer("\\w+");
         builder
@@ -152,7 +159,7 @@ TEST_CASE("indexes files", "[Index]") {
                 .indexEvery(256 * 1024)
                 .build();
         Index index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
-                                  testFile + ".zindex");
+                                  testFile + ".zindex", false);
         CHECK(index.indexSize("default") == 65536 * 6);
         auto CheckIndex = [ & ](const std::string &query, size_t expected) {
             CaptureSink cs;
@@ -166,5 +173,84 @@ TEST_CASE("indexes files", "[Index]") {
         CheckIndex("5", 256 /* the mods */ + 1 /* Line 5 */ + 1 /* Hex 5 */);
         CheckIndex("a", 1); // the one and only hex
         CheckIndex("65536", 1);
+    }
+}
+
+TEST_CASE("metadata tests", "[Index]") {
+    TempDir tempDir;
+    CaptureLog log;
+    auto testFile = tempDir.path + "/test.log";
+    {
+        std::ofstream fileOut(testFile);
+        fileOut << "This is a compressed file\nWhich has two lines\n";
+        fileOut.close();
+        REQUIRE(system(("gzip -f " + testFile).c_str()) == 0);
+        testFile = testFile + ".gz";
+        // Handy for checking the temporary file actually is created as expected
+//        REQUIRE(system(("gzip -l " + testFile).c_str()) == 0);
+    }
+    Index::Builder builder(log, File(fopen(testFile.c_str(), "rb")), testFile,
+                           testFile + ".zindex");
+    RegExpIndexer indexer("\\w+");
+    builder
+            .addIndexer("default", "blah", false, false, indexer)
+            .build();
+    SECTION("loads metadata") {
+        Index index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
+                                  testFile + ".zindex", false);
+        const auto &meta = index.getMetadata();
+        CHECK(meta.at("version") == "1");
+        CHECK(meta.at("compressedFile") == testFile);
+        CHECK(meta.at("compressedSize") == "73");
+        CHECK(meta.count("compressedModTime") == 1);
+    }
+    SECTION("tries to notice corrupt files") {
+        SECTION("corrupt but same size") {
+            auto prevMtime = 0;
+            for (; ;) {
+                File corrupter(fopen(testFile.c_str(), "r+b"));
+                fputc(0, corrupter.get());
+                struct stat s;
+                fstat(fileno(corrupter.get()), &s);
+                if (prevMtime == 0) prevMtime = s.st_mtime;
+                else if (s.st_mtime != prevMtime) break;
+            }
+            SECTION("fails without force") {
+                try {
+                    Index::load(log, File(fopen(testFile.c_str(), "rb")),
+                                testFile + ".zindex", false);
+                    FAIL("Should have thrown");
+                }
+                catch (const std::exception &e) {
+                    CHECK(std::string(e.what()) ==
+                          "Compressed file has been modified since index was built");
+                }
+            }
+            SECTION("loads with force") {
+                Index::load(log, File(fopen(testFile.c_str(), "rb")),
+                            testFile + ".zindex", true);
+            }
+        }
+        SECTION("corrupt; bigger size") {
+            {
+                File corrupter(fopen(testFile.c_str(), "ab"));
+                fputc(0, corrupter.get());
+            }
+            SECTION("fails without force") {
+                try {
+                    Index::load(log, File(fopen(testFile.c_str(), "rb")),
+                                testFile + ".zindex", false);
+                    FAIL("Should have thrown");
+                }
+                catch (const std::exception &e) {
+                    CHECK(std::string(e.what()) ==
+                          "Compressed size changed since index was built");
+                }
+            }
+            SECTION("loads with force") {
+                Index::load(log, File(fopen(testFile.c_str(), "rb")),
+                            testFile + ".zindex", true);
+            }
+        }
     }
 }

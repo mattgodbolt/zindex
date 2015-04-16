@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <vector>
 #include <memory>
+#include <unordered_map>
 
 class Log;
 
@@ -35,11 +36,15 @@ public:
                          LineSink &sink);
     size_t indexSize(const std::string &index) const;
 
+    using Metadata = std::unordered_map<std::string, std::string>;
+    const Metadata &getMetadata() const;
+
     class Builder {
         struct Impl;
         std::unique_ptr<Impl> impl_;
     public:
-        Builder(Log &log, File &&from, const std::string &indexFilename);
+        Builder(Log &log, File &&from, const std::string &fromPath,
+                const std::string &indexFilename);
         ~Builder();
         Builder &indexEvery(uint64_t bytes);
         Builder &addIndexer(const std::string &name,
@@ -52,5 +57,5 @@ public:
     };
 
     static Index load(Log &log, File &&fromCompressed,
-                      const std::string &indexFilename);
+                      const std::string &indexFilename, bool forceLoad);
 };
