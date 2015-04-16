@@ -27,6 +27,7 @@ namespace {
 constexpr auto DefaultIndexEvery = 32 * 1024 * 1024u;
 constexpr auto WindowSize = 32768u;
 constexpr auto ChunkSize = 16384u;
+constexpr auto LogProgressEverySecs = 20;
 constexpr auto Version = 1;
 
 void seek(File &f, uint64_t pos) {
@@ -58,7 +59,7 @@ size_t makeWindow(uint8_t *out, size_t outSize, const uint8_t *in,
     return destLen;
 }
 
-void uncompress(const std::vector<uint8_t> &compressed, uint8_t *to,
+void uncompress(const std::vector <uint8_t> &compressed, uint8_t *to,
                 size_t len) {
     uLongf destLen = len;
     R(::uncompress(to, &len, &compressed[0], compressed.size()));
@@ -320,7 +321,7 @@ Index::Index() { }
 
 Index::~Index() { }
 
-Index::Index(std::unique_ptr<Impl> &&imp) : impl_(std::move(imp)) { }
+Index::Index(std::unique_ptr < Impl > && imp) : impl_(std::move(imp)) { }
 
 struct Index::Builder::Impl : LineSink {
     Log &log;
@@ -331,7 +332,7 @@ struct Index::Builder::Impl : LineSink {
     Sqlite::Statement addIndexSql;
     Sqlite::Statement addMetaSql;
     uint64_t indexEvery = DefaultIndexEvery;
-    std::unordered_map<std::string, std::unique_ptr<IndexHandler>> indexers;
+    std::unordered_map <std::string, std::unique_ptr<IndexHandler>> indexers;
 
     Impl(Log &log, File &&from, const std::string &fromPath,
          const std::string &indexFilename)
@@ -392,6 +393,12 @@ INSERT INTO Indexes VALUES(:name, :creationString, :isNumeric)
     }
 
     void build() {
+        log.info("Building index, generating a checkpoint every ", indexEvery,
+                 " bytes");
+        struct stat compressedStat;
+        if (fstat(fileno(from.get()), &compressedStat) != 0)
+            throw ZlibError(Z_DATA_ERROR);
+
         db.exec(R"(BEGIN TRANSACTION)");
 
         auto addIndex = db.prepare(R"(
@@ -406,12 +413,14 @@ INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
         uint8_t window[WindowSize];
 
         int ret = 0;
+        time_t nextProgress = 0;
         uint64_t totalIn = 0;
         uint64_t totalOut = 0;
         uint64_t last = 0;
         bool first = true;
         LineFinder finder(*this);
 
+        log.info("Indexing...");
         do {
             zs.stream.avail_in = fread(input, 1, ChunkSize, from.get());
             if (ferror(from.get()))
@@ -444,6 +453,8 @@ INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
                 bool endOfBlock = zs.stream.data_type & 0x80;
                 bool lastBlockInStream = zs.stream.data_type & 0x40;
                 if (endOfBlock && !lastBlockInStream && needsIndex) {
+                    log.debug("Creating checkpoint at ", totalOut,
+                              " (compressed offset ", totalIn, ")");
                     if (totalOut != 0) {
                         // Flush previous information.
                         addIndex
@@ -462,6 +473,16 @@ INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
                             .bindBlob(":window", apWindow, size);
                     last = totalOut;
                 }
+                auto now = time(nullptr);
+                if (now >= nextProgress) {
+                    char pc[16];
+                    snprintf(pc, sizeof(pc) - 1, "%.2f",
+                             (totalIn * 100.0) / compressedStat.st_size);
+                    log.info("Progress: ", totalIn, " of ",
+                             compressedStat.st_size,
+                             " (", pc, "%)");
+                    nextProgress = now + LogProgressEverySecs;
+                }
             } while (zs.stream.avail_in);
         } while (ret != Z_STREAM_END);
 
@@ -471,6 +492,8 @@ INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
                     .bindInt64(":uncompressedEndOffset", totalOut - 1)
                     .step();
         }
+
+        log.info("Done");
 
         finder.add(window, WindowSize - zs.stream.avail_out, true);
         const auto &lineOffsets = finder.lineOffsets();
@@ -568,9 +591,9 @@ Index Index::load(Log &log, File &&fromCompressed,
     Sqlite db(log);
     db.open(indexFilename.c_str(), true);
 
-    std::unique_ptr<Impl> impl(new Impl(log,
-                                        std::move(fromCompressed),
-                                        std::move(db)));
+    std::unique_ptr <Impl> impl(new Impl(log,
+                                         std::move(fromCompressed),
+                                         std::move(db)));
     impl->init(forceLoad);
     return Index(std::move(impl));
 }
@@ -579,7 +602,7 @@ void Index::getLine(uint64_t line, LineSink &sink) {
     impl_->getLine(line, sink);
 }
 
-void Index::getLines(const std::vector<uint64_t> &lines, LineSink &sink) {
+void Index::getLines(const std::vector <uint64_t> &lines, LineSink &sink) {
     for (auto line : lines) impl_->getLine(line, sink);
 }
 
@@ -589,7 +612,7 @@ void Index::queryIndex(const std::string &index, const std::string &query,
 }
 
 void Index::queryIndexMulti(const std::string &index,
-                            const std::vector<std::string> &queries,
+                            const std::vector <std::string> &queries,
                             LineSink &sink) {
     // TODO be a little smarter about this.
     for (auto query : queries) impl_->queryIndex(index, query, sink);

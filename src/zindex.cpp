@@ -30,6 +30,10 @@ int Main(int argc, const char *argv[]) {
     SwitchArg forceColor("", "color", "Use color even on non-TTY", cmd);
     SwitchArg numeric("n", "numeric", "Assume the index is numeric", cmd);
     SwitchArg unique("u", "unique", "Assume each line's index is unique", cmd);
+    ValueArg<uint64_t> checkpointEvery(
+            "", "checkpoint-every",
+            "Create an compression checkpoint every <bytes>", false,
+            0, "bytes", cmd);
     ValueArg<string> regex("", "regex", "Create an index using <regex>", true,
                            "", "regex", cmd);
     ValueArg<string> indexFilename("", "index-file",
@@ -62,6 +66,8 @@ int Main(int argc, const char *argv[]) {
                 regex.getValue()); // arguably we should pass uniq_ptr<> to builder?
         builder.addIndexer("default", regex.getValue(), numeric.isSet(),
                            unique.isSet(), indexer);
+        if (checkpointEvery.isSet())
+            builder.indexEvery(checkpointEvery.getValue());
         builder.build();
     } else {
         // Not possible at the moment.
