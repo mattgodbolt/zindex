@@ -1,7 +1,7 @@
 #include "File.h"
 #include "Index.h"
 #include "RegExpIndexer.h"
-#include "StdoutLog.h"
+#include "ConsoleLog.h"
 
 #include <tclap/CmdLine.h>
 
@@ -42,7 +42,7 @@ int Main(int argc, const char *argv[]) {
                                    "index-file", cmd);
     cmd.parse(argc, argv);
 
-    StdoutLog log(
+    ConsoleLog log(
             debug.isSet() ? Log::Severity::Debug : verbose.isSet()
                                                    ? Log::Severity::Info
                                                    : Log::Severity::Warning,

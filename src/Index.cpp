@@ -186,13 +186,17 @@ FROM LineOffsets, AccessPoints
 WHERE offset >= uncompressedOffset AND offset <= uncompressedEndOffset
 AND line = :line
 LIMIT 1)")) {
-        auto queryMeta = db_.prepare("SELECT key, value FROM Metadata");
-        for (; ;) {
-            if (queryMeta.step()) break;
-            auto key = queryMeta.columnString(0);
-            auto value = queryMeta.columnString(1);
-            log_.debug("Metadata: ", key, " = ", value);
-            metadata_.emplace(key, value);
+        try {
+            auto queryMeta = db_.prepare("SELECT key, value FROM Metadata");
+            for (; ;) {
+                if (queryMeta.step()) break;
+                auto key = queryMeta.columnString(0);
+                auto value = queryMeta.columnString(1);
+                log_.debug("Metadata: ", key, " = ", value);
+                metadata_.emplace(key, value);
+            }
+        } catch (const std::exception &e) {
+            log.warn("Caught exception reading metadata: ", e.what());
         }
     }
 
