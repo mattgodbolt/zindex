@@ -497,7 +497,7 @@ INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
                     .step();
         }
 
-        log.info("Done");
+        log.info("Index reading complete");
 
         finder.add(window, WindowSize - zs.stream.avail_out, true);
         const auto &lineOffsets = finder.lineOffsets();
@@ -511,7 +511,9 @@ INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
                     .step();
         }
 
+        log.info("Flushing");
         db.exec(R"(END TRANSACTION)");
+        log.info("Done");
     }
 
     void addMeta(const std::string &key, const std::string &value) {
