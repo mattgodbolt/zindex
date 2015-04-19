@@ -18,6 +18,7 @@
 #include "IndexSink.h"
 #include "Log.h"
 #include "StringView.h"
+#include "PrettyBytes.h"
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -59,7 +60,7 @@ size_t makeWindow(uint8_t *out, size_t outSize, const uint8_t *in,
     return destLen;
 }
 
-void uncompress(const std::vector <uint8_t> &compressed, uint8_t *to,
+void uncompress(const std::vector<uint8_t> &compressed, uint8_t *to,
                 size_t len) {
     uLongf destLen = len;
     R(::uncompress(to, &len, &compressed[0], compressed.size()));
@@ -325,7 +326,7 @@ Index::Index() { }
 
 Index::~Index() { }
 
-Index::Index(std::unique_ptr < Impl > && imp) : impl_(std::move(imp)) { }
+Index::Index(std::unique_ptr<Impl> &&imp) : impl_(std::move(imp)) { }
 
 struct Index::Builder::Impl : LineSink {
     Log &log;
@@ -336,7 +337,7 @@ struct Index::Builder::Impl : LineSink {
     Sqlite::Statement addIndexSql;
     Sqlite::Statement addMetaSql;
     uint64_t indexEvery = DefaultIndexEvery;
-    std::unordered_map <std::string, std::unique_ptr<IndexHandler>> indexers;
+    std::unordered_map<std::string, std::unique_ptr<IndexHandler>> indexers;
 
     Impl(Log &log, File &&from, const std::string &fromPath,
          const std::string &indexFilename)
@@ -397,8 +398,8 @@ INSERT INTO Indexes VALUES(:name, :creationString, :isNumeric)
     }
 
     void build() {
-        log.info("Building index, generating a checkpoint every ", indexEvery,
-                 " bytes");
+        log.info("Building index, generating a checkpoint every ",
+                 PrettyBytes(indexEvery));
         struct stat compressedStat;
         if (fstat(fileno(from.get()), &compressedStat) != 0)
             throw ZlibError(Z_DATA_ERROR);
@@ -457,8 +458,9 @@ INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
                 bool endOfBlock = zs.stream.data_type & 0x80;
                 bool lastBlockInStream = zs.stream.data_type & 0x40;
                 if (endOfBlock && !lastBlockInStream && needsIndex) {
-                    log.debug("Creating checkpoint at ", totalOut,
-                              " (compressed offset ", totalIn, ")");
+                    log.debug("Creating checkpoint at ", PrettyBytes(totalOut),
+                              " (compressed offset ", PrettyBytes(totalIn),
+                              ")");
                     if (totalOut != 0) {
                         // Flush previous information.
                         addIndex
@@ -482,8 +484,8 @@ INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
                     char pc[16];
                     snprintf(pc, sizeof(pc) - 1, "%.2f",
                              (totalIn * 100.0) / compressedStat.st_size);
-                    log.info("Progress: ", totalIn, " of ",
-                             compressedStat.st_size,
+                    log.info("Progress: ", PrettyBytes(totalIn), " of ",
+                             PrettyBytes(compressedStat.st_size),
                              " (", pc, "%)");
                     nextProgress = now + LogProgressEverySecs;
                 }
@@ -597,9 +599,9 @@ Index Index::load(Log &log, File &&fromCompressed,
     Sqlite db(log);
     db.open(indexFilename.c_str(), true);
 
-    std::unique_ptr <Impl> impl(new Impl(log,
-                                         std::move(fromCompressed),
-                                         std::move(db)));
+    std::unique_ptr<Impl> impl(new Impl(log,
+                                        std::move(fromCompressed),
+                                        std::move(db)));
     impl->init(forceLoad);
     return Index(std::move(impl));
 }
@@ -608,7 +610,7 @@ void Index::getLine(uint64_t line, LineSink &sink) {
     impl_->getLine(line, sink);
 }
 
-void Index::getLines(const std::vector <uint64_t> &lines, LineSink &sink) {
+void Index::getLines(const std::vector<uint64_t> &lines, LineSink &sink) {
     for (auto line : lines) impl_->getLine(line, sink);
 }
 
@@ -618,7 +620,7 @@ void Index::queryIndex(const std::string &index, const std::string &query,
 }
 
 void Index::queryIndexMulti(const std::string &index,
-                            const std::vector <std::string> &queries,
+                            const std::vector<std::string> &queries,
                             LineSink &sink) {
     // TODO be a little smarter about this.
     for (auto query : queries) impl_->queryIndex(index, query, sink);

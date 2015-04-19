@@ -6,6 +6,7 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -pthread")
 
 option(UseLTO "Use link-time optimization" OFF)
 option(Static "Statically link" OFF)
+option(BuildSqlShell "Build the sqlite shell" OFF)
 
 if(UseLTO)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -flto")
@@ -45,6 +46,8 @@ set(SOURCE_FILES
     src/ConsoleLog.cpp
     src/StringView.cpp
     src/StringView.h
+    src/PrettyBytes.h
+    src/PrettyBytes.cpp
     ext/sqlite/sqlite3.c)
 
 set(TEST_FILES
@@ -56,6 +59,7 @@ set(TEST_FILES
     tests/RegExpIndexerTest.cpp
     tests/TempDir.h
     tests/TempDir.cpp
+    tests/PrettyBytesTest.cpp
     tests/IndexTest.cpp
     tests/LogTest.cpp)
 
@@ -67,11 +71,13 @@ target_link_libraries(zindex libzindex ${ZLIB_LIBRARIES} dl)
 add_executable(zq src/zq.cpp)
 target_link_libraries(zq libzindex ${ZLIB_LIBRARIES} dl)
 
-add_executable(unit-tests ${TEST_FILES})
+add_executable(unit-tests ${TEST_FILES} )
 target_link_libraries(unit-tests libzindex ${ZLIB_LIBRARIES} dl)
 
-add_executable(sql-shell ext/sqlite/shell.c ext/sqlite/sqlite3.c)
-target_link_libraries(sql-shell dl)
+if(BuildSqlShell)
+    add_executable(sql-shell ext/sqlite/shell.c ext/sqlite/sqlite3.c)
+    target_link_libraries(sql-shell dl)
+endif(BuildSqlShell)
 
 enable_testing()
 add_test(NAME unit-tests
