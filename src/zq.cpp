@@ -7,6 +7,7 @@
 
 #include <iostream>
 #include <stdexcept>
+#include "RangeFetcher.h"
 
 using namespace std;
 using namespace TCLAP;
@@ -21,6 +22,26 @@ struct PrintSink : LineSink {
     void onLine(size_t l, size_t, const char *line, size_t length) override {
         if (printLineNum) cout << l << ":";
         cout << string(line, length) << endl;
+    }
+};
+
+struct PrintHandler : RangeFetcher::Handler {
+    Index &index;
+    LineSink &sink;
+    const bool printSep;
+    const std::string sep;
+
+    PrintHandler(Index &index, LineSink &sink, bool printSep,
+                 const std::string &sep)
+            : index(index), sink(sink), printSep(printSep), sep(sep) { }
+
+    virtual void onLine(uint64_t line) override {
+        index.getLine(line, sink);
+    }
+
+    virtual void onSeparator() override {
+        if (printSep)
+            cout << sep << endl;
     }
 };
 
@@ -48,7 +69,22 @@ int Main(int argc, const char *argv[]) {
     SwitchArg forceLoad("", "force", "Load index even if it appears "
             "inconsistent with the index", cmd);
     SwitchArg lineNum("n", "line-number",
-                      "Prefix each line of output with its line number");
+                      "Prefix each line of output with its line number", cmd);
+    ValueArg<uint64_t> afterArg("A", "after-context",
+                                "Print NUM lines of context after each match",
+                                false, 0, "NUM", cmd);
+    ValueArg<uint64_t> beforeArg("B", "before-context",
+                                 "Print NUM lines of context before each match",
+                                 false, 0, "NUM", cmd);
+    ValueArg<uint64_t> contextArg("C", "context",
+                                  "Print NUM lines of context around each match",
+                                  false, 0, "NUM", cmd);
+    SwitchArg noSepArg("", "no-separator",
+                       "Don't print a separator between non-overlapping contexts",
+                       cmd);
+    ValueArg<string> sepArg("S", "separator",
+                            "Print SEPARATOR between non-overlapping contexts (if -A, -B or -C specified)",
+                            false, "--", "SEPARATOR", cmd);
     ValueArg<string> indexArg("", "index-file", "Use index from <index-file> "
             "(default <file>.zindex)", false, "", "index", cmd);
     cmd.parse(argc, argv);
@@ -71,14 +107,22 @@ int Main(int argc, const char *argv[]) {
     auto index = Index::load(log, move(in), indexFile.c_str(),
                              forceLoad.isSet());
 
+    auto before = 0u;
+    auto after = 0u;
+    if (beforeArg.isSet()) before = beforeArg.getValue();
+    if (afterArg.isSet()) after = afterArg.getValue();
+    if (contextArg.isSet()) before = after = contextArg.getValue();
+    log.debug("Fetching context of ", before, " lines before and ", after,
+              " lines after");
     PrintSink sink(lineNum.isSet());
+    PrintHandler ph(index, sink, (before || after) && !noSepArg.isSet(),
+                    sepArg.getValue());
+    RangeFetcher rangeFetcher(ph, before, after);
     if (lineMode.isSet()) {
-        vector<uint64_t> lines;
         for (auto &q : query.getValue())
-            lines.emplace_back(toInt(q));
-        index.getLines(lines, sink);
+            rangeFetcher(toInt(q));
     } else {
-        index.queryIndexMulti("default", query.getValue(), sink);
+        index.queryIndexMulti("default", query.getValue(), rangeFetcher);
     }
 
     return 0;

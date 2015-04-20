@@ -48,6 +48,8 @@ set(SOURCE_FILES
     src/StringView.h
     src/PrettyBytes.h
     src/PrettyBytes.cpp
+    src/RangeFetcher.cpp
+    src/RangeFetcher.h
     ext/sqlite/sqlite3.c)
 
 set(TEST_FILES
@@ -61,6 +63,7 @@ set(TEST_FILES
     tests/TempDir.cpp
     tests/PrettyBytesTest.cpp
     tests/IndexTest.cpp
+    tests/RangeFetcherTest.cpp
     tests/LogTest.cpp)
 
 add_library(libzindex ${SOURCE_FILES})
@@ -71,7 +74,7 @@ target_link_libraries(zindex libzindex ${ZLIB_LIBRARIES} dl)
 add_executable(zq src/zq.cpp)
 target_link_libraries(zq libzindex ${ZLIB_LIBRARIES} dl)
 
-add_executable(unit-tests ${TEST_FILES} )
+add_executable(unit-tests ${TEST_FILES})
 target_link_libraries(unit-tests libzindex ${ZLIB_LIBRARIES} dl)
 
 if(BuildSqlShell)

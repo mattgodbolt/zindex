@@ -6,6 +6,7 @@
 #include <vector>
 #include <memory>
 #include <unordered_map>
+#include <functional>
 
 class Log;
 
@@ -29,11 +30,22 @@ public:
 
     void getLine(uint64_t line, LineSink &sink);
     void getLines(const std::vector<uint64_t> &lines, LineSink &sink);
+    using LineFunction = std::function<void(size_t)>;
+    LineFunction sinkFetch(LineSink &sink);
     void queryIndex(const std::string &index, const std::string &query,
-                    LineSink &sink);
+                    LineFunction lineFunction);
+    void queryIndex(const std::string &index, const std::string &query,
+                    LineSink &sink) {
+        queryIndex(index, query, sinkFetch(sink));
+    }
     void queryIndexMulti(const std::string &index,
                          const std::vector<std::string> &queries,
-                         LineSink &sink);
+                         LineFunction lineFunction);
+    void queryIndexMulti(const std::string &index,
+                         const std::vector<std::string> &queries,
+                         LineSink &sink) {
+        queryIndexMulti(index, queries, sinkFetch(sink));
+    }
     size_t indexSize(const std::string &index) const;
 
     using Metadata = std::unordered_map<std::string, std::string>;

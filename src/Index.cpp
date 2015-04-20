@@ -241,7 +241,7 @@ LIMIT 1)")) {
     }
 
     void queryIndex(const std::string &index, const std::string &query,
-                    LineSink &sink) {
+                    LineFunction lineFunc) {
         auto stmt = db_.prepare(R"(
 SELECT line FROM index_)" + index + R"(
 WHERE key = :query
@@ -249,7 +249,7 @@ WHERE key = :query
         stmt.bindString(":query", query);
         for (; ;) {
             if (stmt.step()) return;
-            getLine(stmt.columnInt64(0), sink);
+            lineFunc(stmt.columnInt64(0));
         }
     }
 
@@ -325,6 +325,8 @@ WHERE key = :query
 Index::Index() { }
 
 Index::~Index() { }
+
+Index::Index(Index &&other) : impl_(std::move(other.impl_)) { }
 
 Index::Index(std::unique_ptr<Impl> &&imp) : impl_(std::move(imp)) { }
 
@@ -615,15 +617,15 @@ void Index::getLines(const std::vector<uint64_t> &lines, LineSink &sink) {
 }
 
 void Index::queryIndex(const std::string &index, const std::string &query,
-                       LineSink &sink) {
-    impl_->queryIndex(index, query, sink);
+                       LineFunction lineFunction) {
+    impl_->queryIndex(index, query, lineFunction);
 }
 
 void Index::queryIndexMulti(const std::string &index,
                             const std::vector<std::string> &queries,
-                            LineSink &sink) {
+                            LineFunction lineFunction) {
     // TODO be a little smarter about this.
-    for (auto query : queries) impl_->queryIndex(index, query, sink);
+    for (auto query : queries) impl_->queryIndex(index, query, lineFunction);
 }
 
 Index::Builder::~Builder() {
@@ -635,4 +637,10 @@ size_t Index::indexSize(const std::string &index) const {
 
 const Index::Metadata &Index::getMetadata() const {
     return impl_->metadata_;
+}
+
+Index::LineFunction Index::sinkFetch(LineSink &sink) {
+    return std::function<void(size_t)>([ this, &sink ](size_t line) {
+        this->getLine(line, sink);
+    });
 }
