@@ -10,7 +10,12 @@ struct SqliteError : std::runtime_error {
 
     SqliteError(int result, const std::string &context)
             : std::runtime_error(
-            (sqlite3_errstr(result) + std::string(" (") + context +
-             ")").c_str()) {
+            sqlite3_errstr(result) + std::string(" (") + context + ")") {
     }
+
+    SqliteError(const std::string &errMsg)
+            : std::runtime_error(errMsg) { }
+
+    SqliteError(const std::string &errMsg, const std::string &context)
+            : std::runtime_error(errMsg + " (" + context + ")") { }
 };

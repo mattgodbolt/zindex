@@ -45,7 +45,7 @@ TEST_CASE("prepares statements", "[Sqlite]") {
         } catch (const SqliteError &e) {
             threw = e.what();
         }
-        REQUIRE(threw.find("SQL logic error") != std::string::npos);
+        CHECK(threw == "no such table: foo (SELECT * FROM foo)");
     }
 }
 
@@ -60,22 +60,22 @@ TEST_CASE("executes statements", "[Sqlite]") {
     REQUIRE(sqlite.prepare("insert into t values('moo', 1)").step() == true);
     REQUIRE(sqlite.prepare("insert into t values('foo', 2)").step() == true);
     auto select = sqlite.prepare("select * from t order by two desc");
-    REQUIRE(select.columnCount() == 2);
+    CHECK(select.columnCount() == 2);
     int num = 0;
     for (;;) {
         if (select.step()) break;
-        REQUIRE(select.columnName(0) == "one");
-        REQUIRE(select.columnName(1) == "two");
+        CHECK(select.columnName(0) == "one");
+        CHECK(select.columnName(1) == "two");
         if (num == 0) {
-            REQUIRE(select.columnString(0) == "foo");
-            REQUIRE(select.columnInt64(1) == 2);
+            CHECK(select.columnString(0) == "foo");
+            CHECK(select.columnInt64(1) == 2);
         } else if (num == 1) {
-            REQUIRE(select.columnString(0) == "moo");
-            REQUIRE(select.columnInt64(1) == 1);
+            CHECK(select.columnString(0) == "moo");
+            CHECK(select.columnInt64(1) == 1);
         }
         ++num;
     }
-    REQUIRE(num == 2);
+    CHECK(num == 2);
 }
 
 TEST_CASE("handles binds and blobs", "[Sqlite]") {
@@ -92,26 +92,26 @@ TEST_CASE("handles binds and blobs", "[Sqlite]") {
     char bytes[byteLen];
     for (int i = 0; i < byteLen; ++i) bytes[i] = i & 0xff;
     inserter.bindBlob(":data", bytes, byteLen);
-    REQUIRE(inserter.step() == true);
+    CHECK(inserter.step() == true);
     inserter.reset();
     inserter.bindInt64(":id", 5678);
     for (int i = 0; i < byteLen; ++i) bytes[i] = (i & 0xff) ^ 0xff;
     inserter.bindBlob(":data", bytes, byteLen);
-    REQUIRE(inserter.step() == true);
+    CHECK(inserter.step() == true);
 
     auto select = sqlite.prepare("select * from t order by offset");
-    REQUIRE(select.columnCount() == 2);
-    REQUIRE(select.step() == false);
-    REQUIRE(select.columnName(0) == "offset");
-    REQUIRE(select.columnName(1) == "data");
-    REQUIRE(select.columnInt64(0) == 1234);
+    CHECK(select.columnCount() == 2);
+    CHECK(select.step() == false);
+    CHECK(select.columnName(0) == "offset");
+    CHECK(select.columnName(1) == "data");
+    CHECK(select.columnInt64(0) == 1234);
     auto blob1 = select.columnBlob(1);
     REQUIRE(blob1.size() == byteLen);
     for (int i = 0; i < byteLen; ++i) REQUIRE(blob1[i] == (i & 0xff));
-    REQUIRE(select.step() == false);
-    REQUIRE(select.columnInt64(0) == 5678);
+    CHECK(select.step() == false);
+    CHECK(select.columnInt64(0) == 5678);
     auto blob2 = select.columnBlob(1);
     REQUIRE(blob2.size() == byteLen);
     for (int i = 0; i < byteLen; ++i) REQUIRE(blob2[i] == (0xff ^ (i & 0xff)));
-    REQUIRE(select.step() == true);
+    CHECK(select.step() == true);
 }

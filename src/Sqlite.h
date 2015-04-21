@@ -38,6 +38,7 @@ public:
         sqlite3_stmt *statement_;
 
         void destroy();
+        void R(int result) const;
 
         friend class Sqlite;
 
@@ -75,4 +76,8 @@ public:
 
     Statement prepare(const std::string &sql) const;
     void exec(const std::string &sql);
+
+private:
+    void R(int result) const;
+    void R(int result, const std::string &context) const;
 };

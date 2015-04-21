@@ -6,20 +6,6 @@
 #include <cstring>
 #include "Log.h"
 
-namespace {
-
-void R(int result) {
-    if (result != SQLITE_OK)
-        throw SqliteError(result);
-}
-
-void R(int result, const std::string &context) {
-    if (result != SQLITE_OK)
-        throw SqliteError(result, context);
-}
-
-}
-
 Sqlite::Sqlite(Log &log)
         : log_(&log), sql_(nullptr) {
 }
@@ -140,4 +126,19 @@ std::vector<uint8_t> Sqlite::Statement::columnBlob(int index) const {
 void Sqlite::exec(const std::string &sql) {
     log_->debug("Executing ", sql);
     R(sqlite3_exec(sql_, sql.c_str(), nullptr, nullptr, nullptr), sql);
+}
+
+void Sqlite::R(int result) const {
+    if (result != SQLITE_OK)
+        throw SqliteError(sqlite3_errmsg(sql_));
+}
+
+void Sqlite::R(int result, const std::string &context) const {
+    if (result != SQLITE_OK)
+        throw SqliteError(sqlite3_errmsg(sql_), context);
+}
+
+void Sqlite::Statement::R(int result) const {
+    if (result != SQLITE_OK)
+        throw SqliteError(sqlite3_errmsg(sqlite3_db_handle(statement_)));
 }
