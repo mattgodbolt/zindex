@@ -15,7 +15,9 @@ namespace {
 
 string getRealPath(const string &relPath) {
     char realPathBuf[PATH_MAX];
-    return string(realpath(relPath.c_str(), realPathBuf));
+    auto result = realpath(relPath.c_str(), realPathBuf);
+    if (result == nullptr) return relPath;
+    return string(relPath);
 }
 
 }
@@ -48,32 +50,35 @@ int Main(int argc, const char *argv[]) {
                                                    : Log::Severity::Warning,
             forceColour.isSet() || forceColor.isSet());
 
-    auto realPath = getRealPath(inputFile.getValue());
-    File in(fopen(realPath.c_str(), "rb"));
-    if (in.get() == nullptr) {
-        log.info("Unable to open ", inputFile.getValue(), " (as ", realPath,
-                 ")");
-        cerr << "could not open " << inputFile.getValue() << " for reading"
-        << endl;
-        return 1;
-    }
+    try {
+        auto realPath = getRealPath(inputFile.getValue());
+        File in(fopen(realPath.c_str(), "rb"));
+        if (in.get() == nullptr) {
+            log.debug("Unable to open ", inputFile.getValue(), " (as ",
+                      realPath,
+                      ")");
+            log.error("Could not open ", inputFile.getValue(), " for reading");
+            return 1;
+        }
 
-    auto outputFile = indexFilename.isSet() ? indexFilename.getValue() :
-                      inputFile.getValue() + ".zindex";
-    Index::Builder builder(log, move(in), realPath, outputFile);
-    if (regex.isSet()) {
-        RegExpIndexer indexer(
-                regex.getValue()); // arguably we should pass uniq_ptr<> to builder?
-        builder.addIndexer("default", regex.getValue(), numeric.isSet(),
-                           unique.isSet(), indexer);
-        if (checkpointEvery.isSet())
-            builder.indexEvery(checkpointEvery.getValue());
-        builder.build();
-    } else {
-        // Not possible at the moment.
-        cerr << "Regex must be set" << endl;
+        auto outputFile = indexFilename.isSet() ? indexFilename.getValue() :
+                          inputFile.getValue() + ".zindex";
+        Index::Builder builder(log, move(in), realPath, outputFile);
+        if (regex.isSet()) {
+            RegExpIndexer indexer(
+                    regex.getValue()); // arguably we should pass uniq_ptr<> to builder?
+            builder.addIndexer("default", regex.getValue(), numeric.isSet(),
+                               unique.isSet(), indexer);
+            if (checkpointEvery.isSet())
+                builder.indexEvery(checkpointEvery.getValue());
+            builder.build();
+        } else {
+            // Not possible at the moment.
+            log.error("Regex must be set");
+        }
+    } catch (const exception &e) {
+        log.error(e.what());
     }
-
     return 0;
 }
 

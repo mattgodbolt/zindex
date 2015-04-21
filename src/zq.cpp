@@ -95,34 +95,38 @@ int Main(int argc, const char *argv[]) {
                                                    : Log::Severity::Warning,
             forceColour.isSet() || forceColor.isSet());
 
-    auto compressedFile = inputFile.getValue();
-    File in(fopen(compressedFile.c_str(), "rb"));
-    if (in.get() == nullptr) {
-        cerr << "could not open " << compressedFile << " for reading" << endl;
-        return 1;
-    }
+    try {
+        auto compressedFile = inputFile.getValue();
+        File in(fopen(compressedFile.c_str(), "rb"));
+        if (in.get() == nullptr) {
+            log.error("Could not open ", compressedFile, " for reading");
+            return 1;
+        }
 
-    auto indexFile = indexArg.isSet() ? indexArg.getValue() :
-                     inputFile.getValue() + ".zindex";
-    auto index = Index::load(log, move(in), indexFile.c_str(),
-                             forceLoad.isSet());
+        auto indexFile = indexArg.isSet() ? indexArg.getValue() :
+                         inputFile.getValue() + ".zindex";
+        auto index = Index::load(log, move(in), indexFile.c_str(),
+                                 forceLoad.isSet());
 
-    auto before = 0u;
-    auto after = 0u;
-    if (beforeArg.isSet()) before = beforeArg.getValue();
-    if (afterArg.isSet()) after = afterArg.getValue();
-    if (contextArg.isSet()) before = after = contextArg.getValue();
-    log.debug("Fetching context of ", before, " lines before and ", after,
-              " lines after");
-    PrintSink sink(lineNum.isSet());
-    PrintHandler ph(index, sink, (before || after) && !noSepArg.isSet(),
-                    sepArg.getValue());
-    RangeFetcher rangeFetcher(ph, before, after);
-    if (lineMode.isSet()) {
-        for (auto &q : query.getValue())
-            rangeFetcher(toInt(q));
-    } else {
-        index.queryIndexMulti("default", query.getValue(), rangeFetcher);
+        uint64_t before = 0u;
+        uint64_t after = 0u;
+        if (beforeArg.isSet()) before = beforeArg.getValue();
+        if (afterArg.isSet()) after = afterArg.getValue();
+        if (contextArg.isSet()) before = after = contextArg.getValue();
+        log.debug("Fetching context of ", before, " lines before and ", after,
+                  " lines after");
+        PrintSink sink(lineNum.isSet());
+        PrintHandler ph(index, sink, (before || after) && !noSepArg.isSet(),
+                        sepArg.getValue());
+        RangeFetcher rangeFetcher(ph, before, after);
+        if (lineMode.isSet()) {
+            for (auto &q : query.getValue())
+                rangeFetcher(toInt(q));
+        } else {
+            index.queryIndexMulti("default", query.getValue(), rangeFetcher);
+        }
+    } catch (const exception &e) {
+        log.error(e.what());
     }
 
     return 0;
