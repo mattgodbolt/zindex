@@ -63,7 +63,7 @@ public:
                             const std::string &creation,
                             bool numeric,
                             bool unique,
-                            LineIndexer &indexer);
+                            std::unique_ptr<LineIndexer> indexer);
 
         void build();
     };

@@ -36,7 +36,7 @@ int Main(int argc, const char *argv[]) {
             "", "checkpoint-every",
             "Create an compression checkpoint every <bytes>", false,
             0, "bytes", cmd);
-    ValueArg<string> regex("", "regex", "Create an index using <regex>", true,
+    ValueArg<string> regex("", "regex", "Create an index using <regex>", false,
                            "", "regex", cmd);
     ValueArg<string> indexFilename("", "index-file",
                                    "Store index in <index-file> "
@@ -65,17 +65,14 @@ int Main(int argc, const char *argv[]) {
                           inputFile.getValue() + ".zindex";
         Index::Builder builder(log, move(in), realPath, outputFile);
         if (regex.isSet()) {
-            RegExpIndexer indexer(
-                    regex.getValue()); // arguably we should pass uniq_ptr<> to builder?
             builder.addIndexer("default", regex.getValue(), numeric.isSet(),
-                               unique.isSet(), indexer);
-            if (checkpointEvery.isSet())
-                builder.indexEvery(checkpointEvery.getValue());
-            builder.build();
-        } else {
-            // Not possible at the moment.
-            log.error("Regex must be set");
+                               unique.isSet(),
+                               std::unique_ptr<LineIndexer>(
+                                       new RegExpIndexer(regex.getValue())));
         }
+        if (checkpointEvery.isSet())
+            builder.indexEvery(checkpointEvery.getValue());
+        builder.build();
     } catch (const exception &e) {
         log.error(e.what());
     }

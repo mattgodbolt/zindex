@@ -90,11 +90,11 @@ struct ZStream {
 
 struct IndexHandler : IndexSink {
     Log &log;
-    LineIndexer &indexer;
+    std::unique_ptr<LineIndexer> indexer;
     uint64_t currentLine;
 
-    IndexHandler(Log &log, LineIndexer &indexer) :
-            log(log), indexer(indexer), currentLine(0) { }
+    IndexHandler(Log &log, std::unique_ptr<LineIndexer> indexer) :
+            log(log), indexer(std::move(indexer)), currentLine(0) { }
 
     virtual ~IndexHandler() { }
 
@@ -102,7 +102,7 @@ struct IndexHandler : IndexSink {
         try {
             currentLine = lineNumber;
             log.debug("Indexing line '", StringView(line, length), "'");
-            indexer.index(*this, line, length);
+            indexer->index(*this, line, length);
         } catch (const std::exception &e) {
             throw std::runtime_error(
                     "Failed to index line " + std::to_string(currentLine)
@@ -115,8 +115,10 @@ struct IndexHandler : IndexSink {
 struct AlphaHandler : IndexHandler {
     Sqlite::Statement insert;
 
-    AlphaHandler(Log &log, LineIndexer &indexer, Sqlite::Statement &&insert)
-            : IndexHandler(log, indexer), insert(std::move(insert)) { }
+    AlphaHandler(Log &log, std::unique_ptr<LineIndexer> indexer,
+                 Sqlite::Statement &&insert)
+            : IndexHandler(log, std::move(indexer)),
+              insert(std::move(insert)) { }
 
     void add(const char *index, size_t indexLength, size_t offset) override {
         auto key = std::string(index, indexLength);
@@ -133,8 +135,10 @@ struct AlphaHandler : IndexHandler {
 struct NumericHandler : IndexHandler {
     Sqlite::Statement insert;
 
-    NumericHandler(Log &log, LineIndexer &indexer, Sqlite::Statement &&insert)
-            : IndexHandler(log, indexer), insert(std::move(insert)) { }
+    NumericHandler(Log &log, std::unique_ptr<LineIndexer> indexer,
+                   Sqlite::Statement &&insert)
+            : IndexHandler(log, std::move(indexer)),
+              insert(std::move(insert)) { }
 
     void add(const char *index, size_t indexLength, size_t offset) override {
         auto initIndex = index;
@@ -530,7 +534,8 @@ INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
     }
 
     void addIndexer(const std::string &name, const std::string &creation,
-                    bool numeric, bool unique, LineIndexer &indexer) {
+                    bool numeric, bool unique,
+                    std::unique_ptr<LineIndexer> indexer) {
         auto table = "index_" + name;
         std::string type = numeric ? "INTEGER" : "TEXT";
         if (unique) type += " PRIMARY KEY";
@@ -552,10 +557,12 @@ INSERT INTO )" + table + R"( VALUES(:key, :line, :offset)
 )");
         if (numeric) {
             indexers.emplace(name, std::unique_ptr<IndexHandler>(
-                    new NumericHandler(log, indexer, std::move(inserter))));
+                    new NumericHandler(log, std::move(indexer),
+                                       std::move(inserter))));
         } else {
             indexers.emplace(name, std::unique_ptr<IndexHandler>(
-                    new AlphaHandler(log, indexer, std::move(inserter))));
+                    new AlphaHandler(log, std::move(indexer),
+                                     std::move(inserter))));
         }
     }
 
@@ -581,8 +588,8 @@ Index::Builder &Index::Builder::addIndexer(
         const std::string &creation,
         bool numeric,
         bool unique,
-        LineIndexer &indexer) {
-    impl_->addIndexer(name, creation, numeric, unique, indexer);
+        std::unique_ptr<LineIndexer> indexer) {
+    impl_->addIndexer(name, creation, numeric, unique, std::move(indexer));
     return *this;
 }
 
