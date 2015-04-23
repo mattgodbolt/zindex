@@ -11,7 +11,7 @@ option(BuildSqlShell "Build the sqlite shell" OFF)
 if(UseLTO)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -flto")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -flto")
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fuse-linker-plugin -fuse-ld=gold")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fuse-linker-plugin")
 endif(UseLTO)
 
 set(COMMON_LIBS "")
