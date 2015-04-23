@@ -14,11 +14,16 @@ if(UseLTO)
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fuse-linker-plugin -fuse-ld=gold")
 endif(UseLTO)
 
+set(COMMON_LIBS "")
 if(Static)
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static -static-libgcc -static-libstdc++")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DSQLITE_OMIT_LOAD_EXTENSION=1")
     set(CMAKE_FIND_LIBRARY_SUFFIXES ".a")
     set(BUILD_SHARED_LIBRARIES OFF)
+    set(CMAKE_EXE_LINK_DYNAMIC_C_FLAGS)       # remove -Wl,-Bdynamic
+    set(CMAKE_EXE_LINK_DYNAMIC_CXX_FLAGS)
+else(Static)
+    set(COMMON_LIBS "${COMMON_LIBS} dl")
 endif(Static)
 
 find_package(ZLIB REQUIRED)
@@ -70,16 +75,16 @@ add_library(libzindex ${SOURCE_FILES})
 set_target_properties(libzindex PROPERTIES OUTPUT_NAME zindex)
 
 add_executable(zindex src/zindex.cpp)
-target_link_libraries(zindex libzindex ${ZLIB_LIBRARIES} dl)
+target_link_libraries(zindex libzindex ${ZLIB_LIBRARIES} ${COMMON_LIBS})
 add_executable(zq src/zq.cpp)
-target_link_libraries(zq libzindex ${ZLIB_LIBRARIES} dl)
+target_link_libraries(zq libzindex ${ZLIB_LIBRARIES} ${COMMON_LIBS})
 
 add_executable(unit-tests ${TEST_FILES})
-target_link_libraries(unit-tests libzindex ${ZLIB_LIBRARIES} dl)
+target_link_libraries(unit-tests libzindex ${ZLIB_LIBRARIES} ${COMMON_LIBS})
 
 if(BuildSqlShell)
     add_executable(sql-shell ext/sqlite/shell.c ext/sqlite/sqlite3.c)
-    target_link_libraries(sql-shell dl)
+    target_link_libraries(sql-shell ${COMMON_LIBS})
 endif(BuildSqlShell)
 
 enable_testing()
