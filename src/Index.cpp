@@ -568,7 +568,7 @@ INSERT INTO )" + table + R"( VALUES(:key, :line, :offset)
 
     void onLine(
             size_t lineNumber,
-            size_t fileOffset,
+            size_t /*fileOffset*/,
             const char *line, size_t length) override {
         for (auto &&pair : indexers) {
             pair.second->onLine(lineNumber, line, length);
