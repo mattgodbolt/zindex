@@ -23,7 +23,7 @@ if(Static)
     set(CMAKE_EXE_LINK_DYNAMIC_C_FLAGS)       # remove -Wl,-Bdynamic
     set(CMAKE_EXE_LINK_DYNAMIC_CXX_FLAGS)
 else(Static)
-    set(COMMON_LIBS "${COMMON_LIBS} dl")
+    set(COMMON_LIBS "dl")
 endif(Static)
 
 find_package(ZLIB REQUIRED)
