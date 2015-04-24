@@ -54,13 +54,13 @@ $ cd zindex
 $ make
 ```
 
-Binaries are left in `build/`.
+Binaries are left in `build/Release`.
 
 Additionally a static binary can be built if you're happy to dip your toe into CMake:
 
 ```bash
 $ cd path/to/build/directory
-$ cmake path/to/zindex/checkout/dir -DStatic:BOOL=On
+$ cmake path/to/zindex/checkout/dir -DStatic:BOOL=On -DCMAKE_BUILD_TYPE=Release
 $ make
 ```
 
