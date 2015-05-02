@@ -35,7 +35,7 @@ TEST_CASE("finds lines", "[LineFinder]") {
     SECTION("empty input") {
         finder.add(nullptr, 0, true);
         REQUIRE(finder.lineOffsets().size() == 1);
-        REQUIRE(finder.lineOffsets()[0] == 0);
+        REQUIRE(finder.lineOffsets()[0] == uint64_t(0));
         REQUIRE(sink.empty());
     }
 
@@ -44,8 +44,8 @@ TEST_CASE("finds lines", "[LineFinder]") {
         finder.add(one, sizeof(one) - 1, true);
         const auto &lo = finder.lineOffsets();
         REQUIRE(lo.size() == 2);
-        REQUIRE(lo[0] == 0);
-        REQUIRE(lo[1] == 4);
+        REQUIRE(lo[0] == uint64_t(0));
+        REQUIRE(lo[1] == uint64_t(4));
         REQUIRE(sink.lines.size() == 1);
         REQUIRE(sink.lines[0] == "One");
         REQUIRE(sink.fileOffsets[0] == 0);
@@ -56,9 +56,9 @@ TEST_CASE("finds lines", "[LineFinder]") {
             finder.add(oneTwo, sizeof(oneTwo) - 1, true);
             const auto &lo = finder.lineOffsets();
             REQUIRE(lo.size() == 3);
-            REQUIRE(lo[0] == 0);
-            REQUIRE(lo[1] == 4);
-            REQUIRE(lo[2] == 8);
+            REQUIRE(lo[0] == uint64_t(0));
+            REQUIRE(lo[1] == uint64_t(4));
+            REQUIRE(lo[2] == uint64_t(8));
             REQUIRE(sink.lines.size() == 2);
             REQUIRE(sink.lines[0] == "One");
             REQUIRE(sink.lines[1] == "Two");
@@ -70,9 +70,9 @@ TEST_CASE("finds lines", "[LineFinder]") {
                 finder.add(oneTwo + i, 1, i == sizeof(oneTwo) - 2);
             const auto &lo = finder.lineOffsets();
             REQUIRE(lo.size() == 3);
-            REQUIRE(lo[0] == 0);
-            REQUIRE(lo[1] == 4);
-            REQUIRE(lo[2] == 8);
+            REQUIRE(lo[0] == uint64_t(0));
+            REQUIRE(lo[1] == uint64_t(4));
+            REQUIRE(lo[2] == uint64_t(8));
             REQUIRE(sink.lines.size() == 2);
             REQUIRE(sink.lines[0] == "One");
             REQUIRE(sink.lines[1] == "Two");
@@ -87,9 +87,9 @@ TEST_CASE("finds lines", "[LineFinder]") {
             }
             const auto &lo = finder.lineOffsets();
             REQUIRE(lo.size() == 3);
-            REQUIRE(lo[0] == 0);
-            REQUIRE(lo[1] == 4);
-            REQUIRE(lo[2] == 8);
+            REQUIRE(lo[0] == uint64_t(0));
+            REQUIRE(lo[1] == uint64_t(4));
+            REQUIRE(lo[2] == uint64_t(8));
             REQUIRE(sink.lines.size() == 2);
             REQUIRE(sink.lines[0] == "One");
             REQUIRE(sink.lines[1] == "Two");
@@ -100,9 +100,9 @@ TEST_CASE("finds lines", "[LineFinder]") {
             finder.add(oneTwo, sizeof(oneTwo) - 2, true);
             const auto &lo = finder.lineOffsets();
             REQUIRE(lo.size() == 3);
-            REQUIRE(lo[0] == 0);
-            REQUIRE(lo[1] == 4);
-            REQUIRE(lo[2] == 8);
+            REQUIRE(lo[0] == uint64_t(0));
+            REQUIRE(lo[1] == uint64_t(4));
+            REQUIRE(lo[2] == uint64_t(8));
             REQUIRE(sink.lines.size() == 2);
             REQUIRE(sink.lines[0] == "One");
             REQUIRE(sink.lines[1] == "Two");
