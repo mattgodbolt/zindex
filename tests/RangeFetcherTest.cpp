@@ -8,7 +8,7 @@ using LL = std::vector<size_t>;
 struct MockHandler : RangeFetcher::Handler {
     LL lines;
 
-    void onLine(size_t line) override {
+    void onLine(uint64_t line) override {
         lines.emplace_back(line);
     }
 
