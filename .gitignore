@@ -2,3 +2,5 @@
 *.swp
 /build
 core
+.fig
+

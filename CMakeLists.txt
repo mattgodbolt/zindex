@@ -17,6 +17,12 @@ option(UseLTO "Use link-time optimization" OFF)
 option(Static "Statically link" OFF)
 option(BuildSqlShell "Build the sqlite shell" OFF)
 option(ArchNative "Target the computer being built on (march=native)" OFF)
+option(PGO "Set PGO flags" "")
+
+if(PGO)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${PGO}")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${PGO}")
+endif(PGO)
 
 if(UseLTO)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -flto")
