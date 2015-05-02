@@ -37,6 +37,14 @@ namespace TCLAP {
 // ======================================================================
 
 /**
+ * long longs have value-like semantics.
+ */
+template<>
+struct ArgTraits<long long> {
+    typedef ValueLike ValueCategory;
+};
+
+/**
  * longs have value-like semantics.
  */
 template<>
@@ -81,6 +89,14 @@ struct ArgTraits<long long> {
 // ======================================================================
 // Unsigned integer types
 // ======================================================================
+
+/**
+ * unsigned long longs have value-like semantics.
+ */
+template<>
+struct ArgTraits<unsigned long long> {
+    typedef ValueLike ValueCategory;
+};
 
 /**
  * unsigned longs have value-like semantics.
