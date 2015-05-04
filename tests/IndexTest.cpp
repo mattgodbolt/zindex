@@ -9,6 +9,7 @@
 #include <unordered_map>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <FieldIndexer.h>
 
 using namespace std;
 
@@ -17,7 +18,7 @@ namespace {
 struct CaptureSink : LineSink {
     vector<string> captured;
 
-    virtual void onLine(size_t /*lineNumber*/, 
+    virtual void onLine(size_t /*lineNumber*/,
                         size_t /*fileOffset*/, const char *line,
                         size_t length) override {
         captured.emplace_back(line, length);
@@ -45,8 +46,7 @@ TEST_CASE("indexes files", "[Index]") {
     }
     SECTION("unique numerical") {
         Index::Builder builder(log, File(fopen(testFile.c_str(), "rb")),
-                               testFile,
-                               testFile + ".zindex");
+                               testFile, testFile + ".zindex", 0);
         unique_ptr<LineIndexer> indexer(new RegExpIndexer("^Line ([0-9]+)"));
         builder
                 .addIndexer("default", "blah", true, true, move(indexer))
@@ -83,8 +83,7 @@ TEST_CASE("indexes files", "[Index]") {
 
     SECTION("should throw if created unique and there's duplicates") {
         Index::Builder builder(log, File(fopen(testFile.c_str(), "rb")),
-                               testFile,
-                               testFile + ".zindex");
+                               testFile, testFile + ".zindex", 0);
         unique_ptr<LineIndexer> indexer(new RegExpIndexer("Mod ([0-9]+)"));
         CHECK_THROWS(
                 builder.addIndexer("default", "blah", true, true,
@@ -95,7 +94,7 @@ TEST_CASE("indexes files", "[Index]") {
 
     SECTION("non-unique numerical") {
         Index::Builder builder(log, File(fopen(testFile.c_str(), "rb")),
-                               testFile, testFile + ".zindex");
+                               testFile, testFile + ".zindex", 0);
         unique_ptr<LineIndexer> indexer(new RegExpIndexer("Mod ([0-9]+)"));
         builder.addIndexer("default", "blah", true, false, move(indexer))
                 .indexEvery(256 * 1024)
@@ -127,8 +126,7 @@ TEST_CASE("indexes files", "[Index]") {
 
     SECTION("unique alpha") {
         Index::Builder builder(log, File(fopen(testFile.c_str(), "rb")),
-                               testFile,
-                               testFile + ".zindex");
+                               testFile, testFile + ".zindex", 0);
         unique_ptr<LineIndexer> indexer(new RegExpIndexer("Hex ([0-9a-f]+)"));
         builder
                 .addIndexer("default", "blah", false, true, move(indexer))
@@ -155,8 +153,7 @@ TEST_CASE("indexes files", "[Index]") {
 
     SECTION("non-unique alpha") {
         Index::Builder builder(log, File(fopen(testFile.c_str(), "rb")),
-                               testFile,
-                               testFile + ".zindex");
+                               testFile, testFile + ".zindex", 0);
         unique_ptr<LineIndexer> indexer(new RegExpIndexer("\\w+"));
         builder
                 .addIndexer("default", "blah", false, false, move(indexer))
@@ -178,6 +175,34 @@ TEST_CASE("indexes files", "[Index]") {
         CheckIndex("a", 1); // the one and only hex
         CheckIndex("65536", 1);
     }
+
+    SECTION("field-based tests with skip") {
+        Index::Builder builder(log, File(fopen(testFile.c_str(), "rb")),
+                               testFile, testFile + ".zindex",
+                               2); // Skips first two lines
+        unique_ptr<LineIndexer> indexer(new FieldIndexer(' ', 2));
+        builder.addIndexer("default", "blah", true, false, move(indexer))
+                .indexEvery(256 * 1024)
+                .build();
+        Index index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
+                                  testFile + ".zindex", false);
+        CHECK(index.indexSize("default") == 65534);
+        auto CheckIndex = [ & ](const string &line, const string &expected) {
+            CaptureSink cs;
+            index.queryIndex("default", line, cs);
+            if (!expected.empty()) {
+                REQUIRE(cs.captured.size() == 1);
+                CHECK(cs.captured.at(0) == expected);
+            } else {
+                REQUIRE(cs.captured.size() == 0);
+            }
+        };
+        CheckIndex("1", "");
+        CheckIndex("2", "");
+        CheckIndex("3", "Line 3 - Hex 3 - Mod 3");
+        CheckIndex("65535", "Line 65535 - Hex ffff - Mod 255");
+    }
+
 }
 
 TEST_CASE("metadata tests", "[Index]") {
@@ -194,7 +219,7 @@ TEST_CASE("metadata tests", "[Index]") {
 //        REQUIRE(system(("gzip -l " + testFile).c_str()) == 0);
     }
     Index::Builder builder(log, File(fopen(testFile.c_str(), "rb")), testFile,
-                           testFile + ".zindex");
+                           testFile + ".zindex", 0);
     unique_ptr<LineIndexer> indexer(new RegExpIndexer("\\w+"));
     builder
             .addIndexer("default", "blah", false, false, move(indexer))

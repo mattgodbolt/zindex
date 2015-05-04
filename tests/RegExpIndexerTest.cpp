@@ -2,21 +2,9 @@
 #include "RegExpIndexer.h"
 
 #include "catch.hpp"
-
-namespace {
-
-struct CaptureSink : IndexSink {
-    std::vector<std::string> captured;
-
-    virtual void add(const char *index, size_t indexLength,
-                     size_t /*offset*/) override {
-        captured.emplace_back(index, indexLength);
-    }
-};
+#include "CaptureSink.h"
 
 using vs = std::vector<std::string>;
-
-}
 
 TEST_CASE("indexes", "[RegExpIndexer]") {
     SECTION("matches multiple on a line") {

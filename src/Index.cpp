@@ -339,6 +339,7 @@ struct Index::Builder::Impl : LineSink {
     File from;
     std::string fromPath;
     std::string indexFilename;
+    uint64_t skipFirst;
     Sqlite db;
     Sqlite::Statement addIndexSql;
     Sqlite::Statement addMetaSql;
@@ -346,9 +347,9 @@ struct Index::Builder::Impl : LineSink {
     std::unordered_map<std::string, std::unique_ptr<IndexHandler>> indexers;
 
     Impl(Log &log, File &&from, const std::string &fromPath,
-         const std::string &indexFilename)
+         const std::string &indexFilename, uint64_t skipFirst)
             : log(log), from(std::move(from)), fromPath(fromPath),
-              indexFilename(indexFilename),
+              indexFilename(indexFilename), skipFirst(skipFirst),
               db(log), addIndexSql(log), addMetaSql(log) { }
 
     void init() {
@@ -570,16 +571,17 @@ INSERT INTO )" + table + R"( VALUES(:key, :line, :offset)
             size_t lineNumber,
             size_t /*fileOffset*/,
             const char *line, size_t length) override {
+        if (lineNumber <= skipFirst) return;
         for (auto &&pair : indexers) {
             pair.second->onLine(lineNumber, line, length);
         }
     }
-
 };
 
 Index::Builder::Builder(Log &log, File &&from, const std::string &fromPath,
-                        const std::string &indexFilename)
-        : impl_(new Impl(log, std::move(from), fromPath, indexFilename)) {
+                        const std::string &indexFilename, uint64_t skipFirst)
+        : impl_(new Impl(log, std::move(from), fromPath, indexFilename,
+                         skipFirst)) {
     impl_->init();
 }
 

@@ -76,6 +76,8 @@ set(SOURCE_FILES
     src/PrettyBytes.cpp
     src/RangeFetcher.cpp
     src/RangeFetcher.h
+    src/FieldIndexer.cpp
+    src/FieldIndexer.h
     ext/sqlite/sqlite3.c)
 
 set(TEST_FILES
@@ -90,6 +92,7 @@ set(TEST_FILES
     tests/PrettyBytesTest.cpp
     tests/IndexTest.cpp
     tests/RangeFetcherTest.cpp
+    tests/FieldIndexerTest.cpp
     tests/LogTest.cpp)
 
 add_library(libzindex ${SOURCE_FILES})

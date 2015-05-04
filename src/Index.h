@@ -56,7 +56,7 @@ public:
         std::unique_ptr<Impl> impl_;
     public:
         Builder(Log &log, File &&from, const std::string &fromPath,
-                const std::string &indexFilename);
+                const std::string &indexFilename, uint64_t skipFirst);
         ~Builder();
         Builder &indexEvery(uint64_t bytes);
         Builder &addIndexer(const std::string &name,

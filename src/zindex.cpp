@@ -2,6 +2,7 @@
 #include "Index.h"
 #include "RegExpIndexer.h"
 #include "ConsoleLog.h"
+#include "FieldIndexer.h"
 
 #include <tclap/CmdLine.h>
 
@@ -38,6 +39,14 @@ int Main(int argc, const char *argv[]) {
             0, "bytes", cmd);
     ValueArg<string> regex("", "regex", "Create an index using <regex>", false,
                            "", "regex", cmd);
+    ValueArg<uint64_t> skipFirst("", "skip-first", "Skip the first <num> lines",
+                                 false, 0, "num", cmd);
+    ValueArg<int> field("f", "field", "Create an index using field <num> "
+                                "(delimited by -d/--delimiter)",
+                        false, 0, "num", cmd);
+    ValueArg<char> delimiter("d", "delimiter",
+                             "Use <char> as the field delimiter", false, ' ',
+                             "char", cmd);
     ValueArg<string> indexFilename("", "index-file",
                                    "Store index in <index-file> "
                                            "(default <file>.zindex)", false, "",
@@ -63,12 +72,26 @@ int Main(int argc, const char *argv[]) {
 
         auto outputFile = indexFilename.isSet() ? indexFilename.getValue() :
                           inputFile.getValue() + ".zindex";
-        Index::Builder builder(log, move(in), realPath, outputFile);
+        Index::Builder builder(log, move(in), realPath, outputFile,
+                               skipFirst.getValue());
+        if (regex.isSet() && field.isSet()) {
+            throw std::runtime_error(
+                    "Sorry; multiple indices are not supported yet");
+        }
         if (regex.isSet()) {
             builder.addIndexer("default", regex.getValue(), numeric.isSet(),
                                unique.isSet(),
                                std::unique_ptr<LineIndexer>(
                                        new RegExpIndexer(regex.getValue())));
+        }
+        if (field.isSet()) {
+            ostringstream name;
+            name << "Field " << field.getValue() << " delimited by '"
+            << delimiter.getValue() << "'";
+            builder.addIndexer("default", name.str(), numeric.isSet(),
+                               unique.isSet(), std::unique_ptr<LineIndexer>(
+                            new FieldIndexer(delimiter.getValue(),
+                                             field.getValue())));
         }
         if (checkpointEvery.isSet())
             builder.indexEvery(checkpointEvery.getValue());
