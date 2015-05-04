@@ -7,6 +7,7 @@
 #include <tclap/CmdLine.h>
 
 #include <iostream>
+#include <stdexcept>
 #include <limits.h>
 
 using namespace std;
