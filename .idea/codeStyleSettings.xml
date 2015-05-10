@@ -8,6 +8,7 @@
           <option name="INDENT_NAMESPACE_MEMBERS" value="0" />
           <option name="FIELDS_SUFFIX" value="_" />
           <option name="SETTERS_PREFIX" value="" />
+          <option name="INTRODUCE_AUTO_VARS" value="true" />
         </Objective-C>
         <Objective-C-extensions>
           <option name="GENERATE_INSTANCE_VARIABLES_FOR_PROPERTIES" value="ASK" />
