@@ -50,7 +50,7 @@ int Main(int argc, const char *argv[]) {
                              "Use <char> as the field delimiter", false, ' ',
                              "char", cmd);
     ValueArg<string> externalIndexer(
-            "p", "external-pipe-indexer",
+            "p", "pipe",
             "Create indices by piping output through <CMD> which should output "
                     "newline-delimited keys. The CMD should be unbuffered. "
                     "(e.g. 'jq --raw-output --unbuffered .eventId')",
