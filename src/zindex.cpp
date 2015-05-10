@@ -9,6 +9,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <limits.h>
+#include "ExternalIndexer.h"
 
 using namespace std;
 using namespace TCLAP;
@@ -48,6 +49,12 @@ int Main(int argc, const char *argv[]) {
     ValueArg<char> delimiter("d", "delimiter",
                              "Use <char> as the field delimiter", false, ' ',
                              "char", cmd);
+    ValueArg<string> externalIndexer(
+            "p", "external-pipe-indexer",
+            "Create indices by piping output through <CMD> which should output "
+                    "newline-delimited keys. The CMD should be unbuffered. "
+                    "(e.g. 'jq --raw-output --unbuffered .eventId')",
+            false, "", "CMD", cmd);
     ValueArg<string> indexFilename("", "index-file",
                                    "Store index in <index-file> "
                                            "(default <file>.zindex)", false, "",
@@ -93,6 +100,14 @@ int Main(int argc, const char *argv[]) {
                                unique.isSet(), std::unique_ptr<LineIndexer>(
                             new FieldIndexer(delimiter.getValue(),
                                              field.getValue())));
+        }
+        if (externalIndexer.isSet()) {
+            auto indexer = std::unique_ptr<LineIndexer>(
+                    new ExternalIndexer(log,
+                                        externalIndexer.getValue()));
+            builder.addIndexer("default", externalIndexer.getValue(),
+                               numeric.isSet(), unique.isSet(),
+                               std::move(indexer));
         }
         if (checkpointEvery.isSet())
             builder.indexEvery(checkpointEvery.getValue());

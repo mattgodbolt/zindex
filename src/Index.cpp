@@ -43,7 +43,7 @@ struct ZlibError : std::runtime_error {
                     std::string("Error from zlib : ") + zError(result)) { }
 };
 
-void R(int zlibErr) {
+void X(int zlibErr) {
     if (zlibErr != Z_OK) throw ZlibError(zlibErr);
 }
 
@@ -56,14 +56,14 @@ size_t makeWindow(uint8_t *out, size_t outSize, const uint8_t *in,
     if (left < WindowSize)
         memcpy(temp + left, in, WindowSize - left);
     uLongf destLen = outSize;
-    R(compress2(out, &destLen, temp, WindowSize, 9));
+    X(compress2(out, &destLen, temp, WindowSize, 9));
     return destLen;
 }
 
 void uncompress(const std::vector<uint8_t> &compressed, uint8_t *to,
                 size_t len) {
     uLongf destLen = len;
-    R(::uncompress(to, &len, &compressed[0], compressed.size()));
+    X(::uncompress(to, &len, &compressed[0], compressed.size()));
     if (destLen != len)
         throw std::runtime_error("Unable to decompress a full window");
 }
@@ -76,7 +76,7 @@ struct ZStream {
 
     explicit ZStream(Type type) {
         memset(&stream, 0, sizeof(stream));
-        R(inflateInit2(&stream, (int)type));
+        X(inflateInit2(&stream, (int)type));
     }
 
     ~ZStream() {
@@ -283,9 +283,9 @@ WHERE key = :query
             if (c == -1)
                 throw ZlibError(ferror(compressed_.get()) ?
                                 Z_ERRNO : Z_DATA_ERROR);
-            R(inflatePrime(&zs.stream, bitOffset, c >> (8 - bitOffset)));
+            X(inflatePrime(&zs.stream, bitOffset, c >> (8 - bitOffset)));
         }
-        R(inflateSetDictionary(&zs.stream, &window[0], WindowSize));
+        X(inflateSetDictionary(&zs.stream, &window[0], WindowSize));
 
         uint8_t lineBuf[length];
         auto numToSkip = offset - uncompressedOffset;

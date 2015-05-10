@@ -78,6 +78,10 @@ set(SOURCE_FILES
     src/RangeFetcher.h
     src/FieldIndexer.cpp
     src/FieldIndexer.h
+    src/ExternalIndexer.cpp
+    src/ExternalIndexer.h
+    src/Pipe.cpp
+    src/Pipe.h
     ext/sqlite/sqlite3.c)
 
 set(TEST_FILES
