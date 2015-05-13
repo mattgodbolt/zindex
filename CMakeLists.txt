@@ -97,6 +97,7 @@ set(TEST_FILES
     tests/IndexTest.cpp
     tests/RangeFetcherTest.cpp
     tests/FieldIndexerTest.cpp
+    tests/ExternalIndexerTest.cpp
     tests/LogTest.cpp)
 
 add_library(libzindex ${SOURCE_FILES})

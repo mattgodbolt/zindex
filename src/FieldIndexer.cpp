@@ -2,17 +2,17 @@
 #include "FieldIndexer.h"
 #include "IndexSink.h"
 
-void FieldIndexer::index(IndexSink &sink, const char *line, size_t length) {
-    auto origin = line;
-    auto end = line + length;
+void FieldIndexer::index(IndexSink &sink, StringView line) {
+    auto ptr = line.begin();
+    auto end = line.end();
     for (auto i = 1; i < field_; ++i) {
         auto nextSep = static_cast<const char *>(
-                memchr(line, separator_, end - line));
+                memchr(ptr, separator_, end - ptr));
         if (!nextSep) return;
-        line = nextSep + 1;
+        ptr = nextSep + 1;
     }
-    auto lastSep = memchr(line, separator_, end - line);
+    auto lastSep = memchr(ptr, separator_, end - ptr);
     if (lastSep) end = static_cast<const char *>(lastSep);
-    if (line != end)
-        sink.add(line, end - line, line - origin);
+    if (ptr != end)
+        sink.add(ptr, end - ptr, ptr - line.begin());
 }

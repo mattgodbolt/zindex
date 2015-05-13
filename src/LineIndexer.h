@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstddef>
+#include <string>
+#include "StringView.h"
 
 class IndexSink;
 
@@ -8,5 +10,5 @@ class LineIndexer {
 public:
     virtual ~LineIndexer() { }
 
-    virtual void index(IndexSink &sink, const char *line, size_t length) = 0;
+    virtual void index(IndexSink &sink, StringView line) = 0;
 };

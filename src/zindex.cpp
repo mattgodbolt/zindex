@@ -52,8 +52,12 @@ int Main(int argc, const char *argv[]) {
     ValueArg<string> externalIndexer(
             "p", "pipe",
             "Create indices by piping output through <CMD> which should output "
-                    "newline-delimited keys. The CMD should be unbuffered. "
-                    "(e.g. 'jq --raw-output --unbuffered .eventId')",
+                    "a single line for each input line. "
+                    "Multiple keys should be separated by the --delimiter "
+                    "character (which defaults to a space). "
+                    "The CMD should be unbuffered "
+                    "(man stdbuf(1) for one way of doing this).\n"
+                    "Example:  --pipe 'jq --raw-output --unbuffered .eventId')",
             false, "", "CMD", cmd);
     ValueArg<string> indexFilename("", "index-file",
                                    "Store index in <index-file> "
@@ -104,7 +108,8 @@ int Main(int argc, const char *argv[]) {
         if (externalIndexer.isSet()) {
             auto indexer = std::unique_ptr<LineIndexer>(
                     new ExternalIndexer(log,
-                                        externalIndexer.getValue()));
+                                        externalIndexer.getValue(),
+                                        delimiter.getValue()));
             builder.addIndexer("default", externalIndexer.getValue(),
                                numeric.isSet(), unique.isSet(),
                                std::move(indexer));

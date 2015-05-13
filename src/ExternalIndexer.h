@@ -12,15 +12,16 @@ class ExternalIndexer : public LineIndexer {
     pid_t childPid_;
     Pipe sendPipe_;
     Pipe receivePipe_;
+    char separator_;
 
 public:
-    ExternalIndexer(Log &log, const std::string &command);
+    ExternalIndexer(Log &log, const std::string &command, char separator);
     ~ExternalIndexer();
 
     ExternalIndexer(const ExternalIndexer &) = delete;
     ExternalIndexer &operator=(const ExternalIndexer &) = delete;
 
-    virtual void index(IndexSink &sink, const char *line, size_t length);
+    void index(IndexSink &sink, StringView line) override;
 
 private:
     void runChild(const std::string &command);

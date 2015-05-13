@@ -17,10 +17,10 @@ void X(int error) {
 }
 }
 
-void ExternalIndexer::index(IndexSink &sink, const char *line, size_t length) {
+void ExternalIndexer::index(IndexSink &sink, StringView line) {
     log_.debug("Writing to child...");
-    auto bytes = ::write(sendPipe_.writeFd(), line, length);
-    if (bytes != (ssize_t)length) {
+    auto bytes = ::write(sendPipe_.writeFd(), line.begin(), line.length());
+    if (bytes != (ssize_t)line.length()) {
         log_.error("Failed to write to child process: ", errno);
         throw std::runtime_error("Unable to write to child process");
     }
@@ -50,11 +50,20 @@ void ExternalIndexer::index(IndexSink &sink, const char *line, size_t length) {
                     "'");
         }
     }
-    sink.add(&buf[0], buf.size() - 1, 0); // TODO: offset
+    auto ptr = &buf[0];
+    auto end = &buf[buf.size() - 1];
+    while (ptr < end) {
+        auto nextSep = static_cast<char *>(memchr(ptr, separator_, end - ptr));
+        if (!nextSep) nextSep = end;
+        auto length = nextSep - ptr;
+        if (length) sink.add(ptr, length, 0); // TODO: offset
+        ptr = nextSep + 1;
+    }
 }
 
-ExternalIndexer::ExternalIndexer(Log &log, const std::string &command)
-        : log_(log), childPid_(0) {
+ExternalIndexer::ExternalIndexer(Log &log, const std::string &command,
+                                 char separator)
+        : log_(log), childPid_(0), separator_(separator) {
     auto forkResult = fork();
     if (forkResult == -1) {
     } else if (forkResult == 0) {

@@ -9,11 +9,11 @@ RegExpIndexer::RegExpIndexer(const std::string &regex)
         : re_(regex) {
 }
 
-void RegExpIndexer::index(IndexSink &sink, const char *line, size_t length) {
+void RegExpIndexer::index(IndexSink &sink, StringView line) {
     RegExp::Matches result;
     size_t offset = 0;
-    auto lineString = std::string(line, length);
-    while (offset < length) {
+    auto lineString = line.str();
+    while (offset < lineString.length()) {
         if (!re_.exec(lineString, result, offset)) return;
         if (result.size() == 1)
             onMatch(sink, lineString, offset, result[0]);

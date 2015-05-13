@@ -11,8 +11,6 @@ public:
     FieldIndexer(char separator, int field)
             : separator_(separator),
               field_(field) { }
-    virtual void index(IndexSink &sink, const char *line, size_t length);
-    void index(IndexSink &sink, const std::string &line) {
-        index(sink, line.c_str(), line.size());
-    }
+
+    void index(IndexSink &sink, StringView line) override;
 };

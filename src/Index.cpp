@@ -101,8 +101,9 @@ struct IndexHandler : IndexSink {
     void onLine(uint64_t lineNumber, const char *line, size_t length) {
         try {
             currentLine = lineNumber;
-            log.debug("Indexing line '", StringView(line, length), "'");
-            indexer->index(*this, line, length);
+            StringView stringView(line, length);
+            log.debug("Indexing line '", stringView, "'");
+            indexer->index(*this, stringView);
         } catch (const std::exception &e) {
             throw std::runtime_error(
                     "Failed to index line " + std::to_string(currentLine)
