@@ -19,7 +19,7 @@ numeric index.
 ## Creating an index
 
 `zindex` needs to be told what part of each line constitutes the index. This can be done by
-a regular expression currently (JSON and field number coming soon).
+a regular expression, by field, or by piping each line through an external program.
 
 By default zindex creates an index of `file.gz.zindex` when asked to index `file.gz`.
 
@@ -28,6 +28,20 @@ indicates the part that's to be indexed, and the options show each line has a un
 
 ```bash
 $ zindex file.gz --regex 'id:([0-9]+)' --numeric --unique
+```
+
+Example: create an index on the second field of a CSV file:
+
+```bash
+$ zindex file.gz --delimiter , --field 2
+```
+
+Example: create an index on a JSON field `orderId.id` in any of the items in the document root's `actions` array (requires [jq](http://stedolan.github.io/jq/)).
+The `jq` query creates an array of all the `orderId.id`s, then `join`s them with a space to ensure each individual line piped to jq creates a single line of output,
+with multiple matches separated by spaces (which is the default separator).
+
+```bash
+$ zindex file.gz --pipe "jq --raw-output --unbuffered '[.actions[].orderId.id] | join(\" \")'"
 ```
 
 ## Querying the index
