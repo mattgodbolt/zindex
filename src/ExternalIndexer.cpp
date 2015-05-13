@@ -34,13 +34,14 @@ void ExternalIndexer::index(IndexSink &sink, StringView line) {
     for (; ;) {
         auto readPos = buf.size();
         constexpr auto blockSize = 4096u;
-        buf.resize(buf.size() + blockSize);
+        auto initSize = buf.size();
+        buf.resize(initSize + blockSize);
         bytes = ::read(receivePipe_.readFd(), &buf[readPos], blockSize);
         if (bytes < 0)
             throw std::runtime_error("Error reading from child process");
         if (bytes == 0)
             throw std::runtime_error("Child process died");
-        buf.resize(bytes);
+        buf.resize(initSize + bytes);
         if (!buf.empty() && buf.back() == '\n')
             break;
         if (memchr(&buf[0], '\n', buf.size())) {
@@ -66,6 +67,8 @@ ExternalIndexer::ExternalIndexer(Log &log, const std::string &command,
         : log_(log), childPid_(0), separator_(separator) {
     auto forkResult = fork();
     if (forkResult == -1) {
+        log_.error("Unable to fork: ", errno);
+        throw std::runtime_error("Unable to fork");
     } else if (forkResult == 0) {
         runChild(command); // never returns
     }
