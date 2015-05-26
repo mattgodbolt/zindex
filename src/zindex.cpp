@@ -37,7 +37,7 @@ int Main(int argc, const char *argv[]) {
     SwitchArg unique("u", "unique", "Assume each line's index is unique", cmd);
     ValueArg<uint64_t> checkpointEvery(
             "", "checkpoint-every",
-            "Create an compression checkpoint every <bytes>", false,
+            "Create a compression checkpoint every <bytes>", false,
             0, "bytes", cmd);
     ValueArg<string> regex("", "regex", "Create an index using <regex>", false,
                            "", "regex", cmd);
