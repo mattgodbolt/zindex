@@ -38,5 +38,15 @@ public:
         return length_ ? std::string(begin_, length_) : std::string();
     }
 
+    // Return a zero-terminated c-style string, using the StringView storage
+    // itself if possible, else placing the zero-terminated string in the
+    // supplied std::string. Only works for strings without embedded nuls.
+    const char *c_str(std::string &storage) const {
+        if (length_ == 0) return "";
+        if (begin_[length_] == '\0') return begin_;  // already zero-terminated
+        storage.assign(begin_, length_);
+        return storage.c_str();
+    }
+
     friend std::ostream &operator<<(std::ostream &o, const StringView &sv);
 };

@@ -1,8 +1,11 @@
 #pragma once
 
+#include "StringView.h"
+
 #include <cstdint>
 #include <string>
 #include <sqlite3.h>
+#include <unordered_map>
 #include <vector>
 
 class Log;
@@ -56,11 +59,10 @@ public:
         Statement &operator=(Statement &&other);
 
         Statement &reset();
-        Statement &bindInt64(const std::string &param, int64_t data);
-        Statement &bindBlob(const std::string &param, const void *data,
+        Statement &bindInt64(StringView param, int64_t data);
+        Statement &bindBlob(StringView param, const void *data,
                             size_t length);
-        Statement &bindString(const std::string &param,
-                              const std::string &string);
+        Statement &bindString(StringView param, StringView string);
 
         bool step();
 
@@ -72,7 +74,7 @@ public:
         std::vector<uint8_t> columnBlob(int index) const;
 
     private:
-        int P(const std::string &param) const;
+        int P(StringView param) const;
     };
 
     Statement prepare(const std::string &sql) const;

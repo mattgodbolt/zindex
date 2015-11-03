@@ -74,20 +74,20 @@ bool Sqlite::Statement::step() {
 }
 
 Sqlite::Statement &Sqlite::Statement::bindBlob(
-        const std::string &param, const void *data, size_t length) {
+        StringView param, const void *data, size_t length) {
     R(sqlite3_bind_blob(statement_, P(param), data, length, SQLITE_TRANSIENT));
     return *this;
 }
 
-Sqlite::Statement &Sqlite::Statement::bindInt64(const std::string &param,
+Sqlite::Statement &Sqlite::Statement::bindInt64(StringView param,
                                                 int64_t data) {
     R(sqlite3_bind_int64(statement_, P(param), data));
     return *this;
 }
 
-Sqlite::Statement &Sqlite::Statement::bindString(const std::string &param,
-                                                 const std::string &data) {
-    R(sqlite3_bind_text(statement_, P(param), data.c_str(), data.size(),
+Sqlite::Statement &Sqlite::Statement::bindString(StringView param,
+                                                 StringView data) {
+    R(sqlite3_bind_text(statement_, P(param), data.begin(), data.length(),
                         SQLITE_TRANSIENT));
     return *this;
 }
@@ -108,11 +108,13 @@ std::string Sqlite::Statement::columnName(int index) const {
     return sqlite3_column_name(statement_, index);
 }
 
-int Sqlite::Statement::P(const std::string &param) const {
-    auto index = sqlite3_bind_parameter_index(statement_, param.c_str());
+int Sqlite::Statement::P(StringView param) const {
+    std::string asStringStorage;
+    auto index = sqlite3_bind_parameter_index(statement_,
+                                              param.c_str(asStringStorage));
     if (index == 0)
         throw std::runtime_error(
-                "Unable to find bound parameter '" + param + "'");
+                "Unable to find bound parameter '" + param.str() + "'");
     return index;
 }
 
