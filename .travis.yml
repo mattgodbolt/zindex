@@ -15,7 +15,7 @@ script:
   - make
   - ctest -D ExperimentalBuild
   - ctest -D ExperimentalTest
-  - ctest -D ExperimentalMemCheck
+    #- ctest -D ExperimentalMemCheck
 addons:
     apt:
         sources:
