@@ -47,6 +47,8 @@ if(ArchNative)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -march=native")
 endif(ArchNative)
 
+include(CTest)
+
 find_package(ZLIB REQUIRED)
 include_directories(BEFORE SYSTEM ext/sqlite)
 include_directories(${ZLIB_INCLUDE_DIRS} src ext)
@@ -116,6 +118,7 @@ if(BuildSqlShell)
     target_link_libraries(sql-shell ${COMMON_LIBS})
 endif(BuildSqlShell)
 
+find_program(MEMORYCHECK_COMMAND valgrind)
 enable_testing()
 add_test(NAME unit-tests
          COMMAND unit-tests)

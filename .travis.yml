@@ -1,19 +1,27 @@
+sudo: false
 language: cpp
 compiler:
   - gcc
   - clang
-before_install:
-  - sudo add-apt-repository ppa:ubuntu-toolchain-r/test -y
-  - sudo add-apt-repository ppa:h-rayflood/llvm -y
-  - sudo apt-add-repository 'deb http://llvm.org/apt/precise/ llvm-toolchain-precise main'
-  - sudo apt-add-repository 'deb http://llvm.org/apt/precise/ llvm-toolchain-precise-3.5 main'
-  - sudo apt-get update -qq
+env:
+  - BUILD_TYPE=Debug
+  - BUILD_TYPE=Release
 install:
-  - if [ "$CXX" = "g++" ]; then sudo apt-get install -qq g++-4.7; fi
   - if [ "$CXX" = "g++" ]; then export CXX="g++-4.7" CC="gcc-4.7"; fi
-  - if [ "$CXX" = "clang++" ]; then sudo apt-get install -qq --allow-unauthenticated clang-3.5; fi
-  - if [ "$CXX" = "clang++" ]; then export CXX="clang++-3.5" CC="clang-3.5"; fi
 script:
-  - cmake .
+  - mkdir build
+  - cd build
+  - cmake -DCMAKE_BUILD_TYPE=${BUILD_TYPE} ..
   - make
-  - make test
+  - ctest -D ExperimentalBuild
+  - ctest -D ExperimentalMemCheck
+addons:
+    apt:
+        sources:
+            - ubuntu-toolchain-r-test
+            - kalakris-cmake
+        packages:
+            - gcc-4.7
+            - g++-4.7
+            - valgrind
+            - cmake
