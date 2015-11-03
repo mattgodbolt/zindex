@@ -57,7 +57,7 @@ void ExternalIndexer::index(IndexSink &sink, StringView line) {
         auto nextSep = static_cast<char *>(memchr(ptr, separator_, end - ptr));
         if (!nextSep) nextSep = end;
         auto length = nextSep - ptr;
-        if (length) sink.add(ptr, length, 0); // TODO: offset
+        if (length) sink.add(StringView(ptr, length), 0); // TODO: offset
         ptr = nextSep + 1;
     }
 }

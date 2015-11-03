@@ -1,5 +1,7 @@
 #pragma once
 
+#include "StringView.h"
+
 #include <cstddef>
 
 // An IndexSink is a sink for a LineIndexer: each item to index should be given
@@ -8,6 +10,6 @@ class IndexSink {
 public:
     virtual ~IndexSink() { }
 
-    // TODO: use a StringView here and update docs.
-    virtual void add(const char *index, size_t indexLength, size_t offset) = 0;
+    // Add a key to be indexed. offset should be the offset within the line.
+    virtual void add(StringView item, size_t offset) = 0;
 };

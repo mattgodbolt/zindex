@@ -14,5 +14,5 @@ void FieldIndexer::index(IndexSink &sink, StringView line) {
     auto lastSep = memchr(ptr, separator_, end - ptr);
     if (lastSep) end = static_cast<const char *>(lastSep);
     if (ptr != end)
-        sink.add(ptr, end - ptr, ptr - line.begin());
+        sink.add(StringView(ptr, end - ptr), ptr - line.begin());
 }

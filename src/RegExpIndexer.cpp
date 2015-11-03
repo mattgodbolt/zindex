@@ -30,12 +30,12 @@ void RegExpIndexer::onMatch(IndexSink &sink, const std::string &line,
                             size_t offset, const RegExp::Match &match) {
     auto matchLen = match.second - match.first;
     try {
-        sink.add(line.c_str() + offset + match.first, matchLen,
+        sink.add(StringView(line.c_str() + offset + match.first, matchLen),
                  offset + match.first);
     } catch (const std::exception &e) {
         throw std::runtime_error(
                 "Error handling index match '" +
-                        line.substr(offset + match.first, matchLen) +
-                        "' - " + e.what());
+                line.substr(offset + match.first, matchLen) +
+                "' - " + e.what());
     }
 }

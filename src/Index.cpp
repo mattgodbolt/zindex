@@ -121,8 +121,7 @@ struct AlphaHandler : IndexHandler {
             : IndexHandler(log, std::move(indexer)),
               insert(std::move(insert)) { }
 
-    void add(const char *index, size_t indexLength, size_t offset) override {
-        auto key = std::string(index, indexLength);
+    void add(StringView key, size_t offset) override {
         log.debug("Found key '", key, "'");
         insert
                 .reset()
@@ -141,8 +140,10 @@ struct NumericHandler : IndexHandler {
             : IndexHandler(log, std::move(indexer)),
               insert(std::move(insert)) { }
 
-    void add(const char *index, size_t indexLength, size_t offset) override {
-        auto initIndex = index;
+    void add(StringView key, size_t offset) override {
+        auto index = key.begin();
+        auto initIndex = key.begin();
+        auto indexLength = key.length();
         auto initLen = indexLength;
         int64_t val = 0;
         bool negative = false;
@@ -213,7 +214,7 @@ LIMIT 1)")) {
         }
         auto sizeStr = std::to_string(stats.st_size);
         auto timeStr = std::to_string(stats.st_mtime);
-        log_.debug("Opened compressde file of size ", sizeStr, " mtime ",
+        log_.debug("Opened compressed file of size ", sizeStr, " mtime ",
                    timeStr);
         if (metadata_.find("compressedSize") != metadata_.end()
             && sizeStr != metadata_.at("compressedSize")) {

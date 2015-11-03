@@ -5,9 +5,9 @@
 struct CaptureSink : IndexSink {
     std::vector<std::string> captured;
 
-    virtual void add(const char *index, size_t indexLength,
+    virtual void add(StringView index,
                      size_t /*offset*/) override {
-        captured.emplace_back(index, indexLength);
+        captured.emplace_back(index.str());
     }
 
     void reset() { captured.clear(); }
