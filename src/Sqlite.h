@@ -16,7 +16,7 @@ class Sqlite {
     sqlite3 *sql_;
 
 public:
-    Sqlite(Log &log);
+    explicit Sqlite(Log &log);
     ~Sqlite();
     Sqlite(const Sqlite &) = delete;
     Sqlite &operator=(const Sqlite &) = delete;
