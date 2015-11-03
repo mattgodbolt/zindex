@@ -1,8 +1,116 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <module type="CPP_MODULE" version="4">
   <component name="NewModuleRootManager">
-    <content url="file://$MODULE_DIR$" />
+    <content url="file://$MODULE_DIR$">
+      <sourceFolder url="file://$MODULE_DIR$/CMakeLists.txt" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/ext/sqlite/sqlite3.c" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/ext/sqlite/sqlite3.h" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/ConsoleLog.cpp" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/ConsoleLog.h" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/ExternalIndexer.cpp" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/ExternalIndexer.h" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/FieldIndexer.cpp" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/FieldIndexer.h" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/File.h" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/Index.cpp" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/Index.h" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/IndexSink.h" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/LineFinder.cpp" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/LineFinder.h" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/LineIndexer.h" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/LineSink.h" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/Log.h" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/Pipe.cpp" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/Pipe.h" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/PrettyBytes.cpp" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/PrettyBytes.h" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/RangeFetcher.cpp" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/RangeFetcher.h" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/RegExp.cpp" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/RegExp.h" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/RegExpIndexer.cpp" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/RegExpIndexer.h" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/Sqlite.cpp" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/Sqlite.h" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/SqliteError.h" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/StringView.cpp" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/StringView.h" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/zindex.cpp" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/zq.cpp" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/tests/ExternalIndexerTest.cpp" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/tests/FieldIndexerTest.cpp" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/tests/IndexTest.cpp" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/tests/LineFinderTest.cpp" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/tests/LogTest.cpp" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/tests/PrettyBytesTest.cpp" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/tests/RangeFetcherTest.cpp" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/tests/RegExpIndexerTest.cpp" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/tests/RegExpTest.cpp" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/tests/SqliteTest.cpp" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/tests/TempDir.cpp" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/tests/TempDir.h" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/tests/catch.hpp" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/tests/test_main.cpp" isTestSource="false" />
+    </content>
     <orderEntry type="inheritedJdk" />
     <orderEntry type="sourceFolder" forTests="false" />
+    <orderEntry type="module-library">
+      <library name="Header Search Paths">
+        <CLASSES>
+          <root url="file://$MODULE_DIR$/ext" />
+          <root url="file://$MODULE_DIR$/src" />
+          <root url="file:///usr/include" />
+          <root url="file:///usr/lib/gcc/x86_64-linux-gnu/4.8/include" />
+          <root url="file:///usr/lib/gcc/x86_64-linux-gnu/4.8/include-fixed" />
+          <root url="file:///usr/lib/gcc/x86_64-linux-gnu/4.8/include/objc" />
+          <root url="file:///usr/local/include" />
+        </CLASSES>
+        <SOURCES>
+          <root url="file://$MODULE_DIR$/ext" />
+          <root url="file://$MODULE_DIR$/src" />
+          <root url="file:///usr/include" />
+          <root url="file:///usr/lib/gcc/x86_64-linux-gnu/4.8/include" />
+          <root url="file:///usr/lib/gcc/x86_64-linux-gnu/4.8/include-fixed" />
+          <root url="file:///usr/lib/gcc/x86_64-linux-gnu/4.8/include/objc" />
+          <root url="file:///usr/local/include" />
+        </SOURCES>
+        <excluded>
+          <root url="file://$MODULE_DIR$/ext/sqlite/sqlite3.c" />
+          <root url="file://$MODULE_DIR$/ext/sqlite/sqlite3.h" />
+          <root url="file://$MODULE_DIR$/src/IndexSink.h" />
+          <root url="file://$MODULE_DIR$/src/RegExp.h" />
+          <root url="file://$MODULE_DIR$/src/ConsoleLog.cpp" />
+          <root url="file://$MODULE_DIR$/src/FieldIndexer.cpp" />
+          <root url="file://$MODULE_DIR$/src/Log.h" />
+          <root url="file://$MODULE_DIR$/src/StringView.cpp" />
+          <root url="file://$MODULE_DIR$/src/File.h" />
+          <root url="file://$MODULE_DIR$/src/Pipe.h" />
+          <root url="file://$MODULE_DIR$/src/ConsoleLog.h" />
+          <root url="file://$MODULE_DIR$/src/RangeFetcher.cpp" />
+          <root url="file://$MODULE_DIR$/src/ExternalIndexer.h" />
+          <root url="file://$MODULE_DIR$/src/PrettyBytes.cpp" />
+          <root url="file://$MODULE_DIR$/src/LineFinder.h" />
+          <root url="file://$MODULE_DIR$/src/StringView.h" />
+          <root url="file://$MODULE_DIR$/src/Sqlite.cpp" />
+          <root url="file://$MODULE_DIR$/src/Index.h" />
+          <root url="file://$MODULE_DIR$/src/SqliteError.h" />
+          <root url="file://$MODULE_DIR$/src/LineIndexer.h" />
+          <root url="file://$MODULE_DIR$/src/Index.cpp" />
+          <root url="file://$MODULE_DIR$/src/Pipe.cpp" />
+          <root url="file://$MODULE_DIR$/src/zq.cpp" />
+          <root url="file://$MODULE_DIR$/src/LineSink.h" />
+          <root url="file://$MODULE_DIR$/src/RegExp.cpp" />
+          <root url="file://$MODULE_DIR$/src/Sqlite.h" />
+          <root url="file://$MODULE_DIR$/src/RegExpIndexer.cpp" />
+          <root url="file://$MODULE_DIR$/src/PrettyBytes.h" />
+          <root url="file://$MODULE_DIR$/src/FieldIndexer.h" />
+          <root url="file://$MODULE_DIR$/src/zindex.cpp" />
+          <root url="file://$MODULE_DIR$/src/LineFinder.cpp" />
+          <root url="file://$MODULE_DIR$/src/ExternalIndexer.cpp" />
+          <root url="file://$MODULE_DIR$/src/RangeFetcher.h" />
+          <root url="file://$MODULE_DIR$/src/RegExpIndexer.h" />
+        </excluded>
+      </library>
+    </orderEntry>
   </component>
 </module>

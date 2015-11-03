@@ -238,23 +238,26 @@ LIMIT 1)")) {
         }
     }
 
-    void getLine(uint64_t line, LineSink &sink) {
+    bool getLine(uint64_t line, LineSink &sink) {
         lineQuery_.reset();
         lineQuery_.bindInt64(":line", line);
-        if (lineQuery_.step()) return;
+        if (lineQuery_.step()) return false;
         print(lineQuery_, sink);
+        return true;
     }
 
-    void queryIndex(const std::string &index, const std::string &query,
+    size_t queryIndex(const std::string &index, const std::string &query,
                     LineFunction lineFunc) {
         auto stmt = db_.prepare(R"(
 SELECT line FROM index_)" + index + R"(
 WHERE key = :query
 )");
         stmt.bindString(":query", query);
+        size_t matches = 0;
         for (; ;) {
-            if (stmt.step()) return;
+            if (stmt.step()) return matches;
             lineFunc(stmt.columnInt64(0));
+            ++matches;
         }
     }
 
@@ -348,9 +351,9 @@ struct Index::Builder::Impl : LineSink {
     std::unordered_map<std::string, std::unique_ptr<IndexHandler>> indexers;
 
     Impl(Log &log, File &&from, const std::string &fromPath,
-         const std::string &indexFilename, uint64_t skipFirst)
+         const std::string &indexFilename)
             : log(log), from(std::move(from)), fromPath(fromPath),
-              indexFilename(indexFilename), skipFirst(skipFirst),
+              indexFilename(indexFilename), skipFirst(0),
               db(log), addIndexSql(log), addMetaSql(log) { }
 
     void init() {
@@ -580,9 +583,8 @@ INSERT INTO )" + table + R"( VALUES(:key, :line, :offset)
 };
 
 Index::Builder::Builder(Log &log, File &&from, const std::string &fromPath,
-                        const std::string &indexFilename, uint64_t skipFirst)
-        : impl_(new Impl(log, std::move(from), fromPath, indexFilename,
-                         skipFirst)) {
+                        const std::string &indexFilename)
+        : impl_(new Impl(log, std::move(from), fromPath, indexFilename)) {
     impl_->init();
 }
 
@@ -598,6 +600,11 @@ Index::Builder &Index::Builder::addIndexer(
 
 Index::Builder &Index::Builder::indexEvery(uint64_t bytes) {
     impl_->indexEvery = bytes;
+    return *this;
+}
+
+Index::Builder &Index::Builder::skipFirst(uint64_t skipFirst) {
+    impl_->skipFirst = skipFirst;
     return *this;
 }
 
@@ -618,24 +625,29 @@ Index Index::load(Log &log, File &&fromCompressed,
     return Index(std::move(impl));
 }
 
-void Index::getLine(uint64_t line, LineSink &sink) {
-    impl_->getLine(line, sink);
+bool Index::getLine(uint64_t line, LineSink &sink) {
+    return impl_->getLine(line, sink);
 }
 
-void Index::getLines(const std::vector<uint64_t> &lines, LineSink &sink) {
-    for (auto line : lines) impl_->getLine(line, sink);
+size_t Index::getLines(const std::vector<uint64_t> &lines, LineSink &sink) {
+    size_t matched = 0u;
+    for (auto line : lines) if (impl_->getLine(line, sink)) ++matched;
+    return matched;
 }
 
-void Index::queryIndex(const std::string &index, const std::string &query,
+size_t Index::queryIndex(const std::string &index, const std::string &query,
                        LineFunction lineFunction) {
-    impl_->queryIndex(index, query, lineFunction);
+    return impl_->queryIndex(index, query, lineFunction);
 }
 
-void Index::queryIndexMulti(const std::string &index,
+size_t Index::queryIndexMulti(const std::string &index,
                             const std::vector<std::string> &queries,
                             LineFunction lineFunction) {
     // TODO be a little smarter about this.
-    for (auto query : queries) impl_->queryIndex(index, query, lineFunction);
+    size_t result = 0;
+    for (auto query : queries)
+        result += impl_->queryIndex(index, query, lineFunction);
+    return result;
 }
 
 Index::Builder::~Builder() {

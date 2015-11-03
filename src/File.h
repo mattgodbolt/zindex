@@ -11,4 +11,5 @@ struct Closer {
 };
 }
 
+// A File is a self-closing FILE *.
 using File = std::unique_ptr<FILE, impl::Closer>;

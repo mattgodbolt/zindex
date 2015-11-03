@@ -4,9 +4,9 @@
 #include <vector>
 #include <regex.h>
 
+// Wrapper over the POSIX regex library.
 // Ideally we'd use std::regex, but that's broken on GCC 4.8 (which is what
 // I'm targeting).
-
 class RegExp {
     regex_t re_;
     bool owned_;

@@ -7,6 +7,7 @@
 
 class Log;
 
+// A fairly simple wrapper over sqlite.
 class Sqlite {
     Log *log_;
     sqlite3 *sql_;

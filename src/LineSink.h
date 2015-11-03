@@ -2,6 +2,7 @@
 
 #include <string>
 
+// A sink to be called with each line in a file.
 class LineSink {
 public:
     virtual ~LineSink() { }

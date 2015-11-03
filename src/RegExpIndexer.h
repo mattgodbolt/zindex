@@ -5,10 +5,13 @@
 #include "LineIndexer.h"
 #include "IndexSink.h"
 
+// A LineIndexer that uses the capture group of a regular expression to provide
+// indices to an IndexSink.
 class RegExpIndexer : public LineIndexer {
     RegExp re_;
+
 public:
-    RegExpIndexer(const std::string &regex);
+    explicit RegExpIndexer(const std::string &regex);
     void index(IndexSink &sink, StringView line) override;
 
 private:

@@ -7,6 +7,8 @@
 #include <unistd.h>
 #include <string>
 
+// A LineIndexer that runs an external command and pipes output to it, and
+// awaits its response.
 class ExternalIndexer : public LineIndexer {
     Log &log_;
     pid_t childPid_;

@@ -3,6 +3,8 @@
 #include <sstream>
 #include <string>
 
+// A lightweight logging system. Concrete implementations include ConsoleLog and
+// CaptureLog.
 class Log {
 public:
     virtual ~Log() { }

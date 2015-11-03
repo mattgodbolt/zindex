@@ -4,7 +4,6 @@
 
 #include <algorithm>
 #include <cstring>
-#include <stdexcept>
 
 LineFinder::LineFinder(LineSink &sink)
         : sink_(sink), currentLineOffset_(0) {

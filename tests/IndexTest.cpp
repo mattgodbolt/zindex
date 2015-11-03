@@ -46,7 +46,7 @@ TEST_CASE("indexes files", "[Index]") {
     }
     SECTION("unique numerical") {
         Index::Builder builder(log, File(fopen(testFile.c_str(), "rb")),
-                               testFile, testFile + ".zindex", 0);
+                               testFile, testFile + ".zindex");
         unique_ptr<LineIndexer> indexer(new RegExpIndexer("^Line ([0-9]+)"));
         builder
                 .addIndexer("default", "blah", true, true, move(indexer))
@@ -83,7 +83,7 @@ TEST_CASE("indexes files", "[Index]") {
 
     SECTION("should throw if created unique and there's duplicates") {
         Index::Builder builder(log, File(fopen(testFile.c_str(), "rb")),
-                               testFile, testFile + ".zindex", 0);
+                               testFile, testFile + ".zindex");
         unique_ptr<LineIndexer> indexer(new RegExpIndexer("Mod ([0-9]+)"));
         CHECK_THROWS(
                 builder.addIndexer("default", "blah", true, true,
@@ -94,7 +94,7 @@ TEST_CASE("indexes files", "[Index]") {
 
     SECTION("non-unique numerical") {
         Index::Builder builder(log, File(fopen(testFile.c_str(), "rb")),
-                               testFile, testFile + ".zindex", 0);
+                               testFile, testFile + ".zindex");
         unique_ptr<LineIndexer> indexer(new RegExpIndexer("Mod ([0-9]+)"));
         builder.addIndexer("default", "blah", true, false, move(indexer))
                 .indexEvery(256 * 1024)
@@ -126,7 +126,7 @@ TEST_CASE("indexes files", "[Index]") {
 
     SECTION("unique alpha") {
         Index::Builder builder(log, File(fopen(testFile.c_str(), "rb")),
-                               testFile, testFile + ".zindex", 0);
+                               testFile, testFile + ".zindex");
         unique_ptr<LineIndexer> indexer(new RegExpIndexer("Hex ([0-9a-f]+)"));
         builder
                 .addIndexer("default", "blah", false, true, move(indexer))
@@ -153,7 +153,7 @@ TEST_CASE("indexes files", "[Index]") {
 
     SECTION("non-unique alpha") {
         Index::Builder builder(log, File(fopen(testFile.c_str(), "rb")),
-                               testFile, testFile + ".zindex", 0);
+                               testFile, testFile + ".zindex");
         unique_ptr<LineIndexer> indexer(new RegExpIndexer("\\w+"));
         builder
                 .addIndexer("default", "blah", false, false, move(indexer))
@@ -178,8 +178,8 @@ TEST_CASE("indexes files", "[Index]") {
 
     SECTION("field-based tests with skip") {
         Index::Builder builder(log, File(fopen(testFile.c_str(), "rb")),
-                               testFile, testFile + ".zindex",
-                               2); // Skips first two lines
+                               testFile, testFile + ".zindex");
+        builder.skipFirst(2);
         unique_ptr<LineIndexer> indexer(new FieldIndexer(' ', 2));
         builder.addIndexer("default", "blah", true, false, move(indexer))
                 .indexEvery(256 * 1024)
@@ -219,7 +219,7 @@ TEST_CASE("metadata tests", "[Index]") {
 //        REQUIRE(system(("gzip -l " + testFile).c_str()) == 0);
     }
     Index::Builder builder(log, File(fopen(testFile.c_str(), "rb")), testFile,
-                           testFile + ".zindex", 0);
+                           testFile + ".zindex");
     unique_ptr<LineIndexer> indexer(new RegExpIndexer("\\w+"));
     builder
             .addIndexer("default", "blah", false, false, move(indexer))

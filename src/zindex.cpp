@@ -84,8 +84,9 @@ int Main(int argc, const char *argv[]) {
 
         auto outputFile = indexFilename.isSet() ? indexFilename.getValue() :
                           inputFile.getValue() + ".zindex";
-        Index::Builder builder(log, move(in), realPath, outputFile,
-                               skipFirst.getValue());
+        Index::Builder builder(log, move(in), realPath, outputFile);
+        if (skipFirst.isSet())
+            builder.skipFirst(skipFirst.getValue());
         if (regex.isSet() && field.isSet()) {
             throw std::runtime_error(
                     "Sorry; multiple indices are not supported yet");

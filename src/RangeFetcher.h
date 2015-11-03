@@ -2,6 +2,10 @@
 
 #include <cstdint>
 
+// A RangeFetcher is usable as an Index::LineFunction, and extends each matching
+// line number into a range from line-linesBefore to line+linesAfter, but with
+// overlapping regions removed. The Handler is called with each line and upon
+// separation of ranges.
 class RangeFetcher {
     const uint64_t linesBefore_;
     const uint64_t linesAfter_;
@@ -9,11 +13,14 @@ class RangeFetcher {
     uint64_t prevEnd_;
 
 public:
+    // A handler for line ranges.
     class Handler {
     public:
         virtual ~Handler() { }
 
+        // Called for each line within a group.
         virtual void onLine(uint64_t line) = 0;
+        // Called between each group.
         virtual void onSeparator() = 0;
     };
 

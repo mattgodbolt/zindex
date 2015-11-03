@@ -1,7 +1,7 @@
 #include <unistd.h>
 #include <stdexcept>
+
 #include "Pipe.h"
-#include <stdexcept>
 
 Pipe::Pipe()
         : pipeFds_{ -1, -1 } {

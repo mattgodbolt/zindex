@@ -6,6 +6,8 @@
 
 class IndexSink;
 
+// A LineIndexer is given lines by the Indexer, and tells an IndexSink about
+// matches within it (based on whatever it indexes, e.g. a matching RegExp).
 class LineIndexer {
 public:
     virtual ~LineIndexer() { }

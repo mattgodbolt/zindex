@@ -3,6 +3,7 @@
 #include <stdexcept>
 #include <sqlite3.h>
 
+// An exception in sqlite.
 struct SqliteError : std::runtime_error {
     SqliteError(int result)
             : std::runtime_error(sqlite3_errstr(result)) {

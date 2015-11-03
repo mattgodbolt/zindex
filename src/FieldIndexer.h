@@ -4,6 +4,7 @@
 
 #include <string>
 
+// A LineIndexer that indexes based on a separator and field number.
 class FieldIndexer : public LineIndexer {
     char separator_;
     int field_;
