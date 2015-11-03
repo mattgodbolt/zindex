@@ -14,6 +14,7 @@ script:
   - cmake -DCMAKE_BUILD_TYPE=${BUILD_TYPE} ..
   - make
   - ctest -D ExperimentalBuild
+  - ctest -D ExperimentalTest
   - ctest -D ExperimentalMemCheck
 addons:
     apt:
