@@ -43,12 +43,124 @@
         <section>
             <h1>zindex</h1>
 
-            <h3>subtitle</h3>
+            <h3>Scratching your own itch</h3>
 
             <p>
                 <small><a href="https://github.com/mattgodbolt">@mattgodbolt</a> / <a
                         href="https://twitter.com/mattgodbolt">@mattgodbolt</a>
                 </small>
+            </p>
+        </section>
+
+        <section>
+            <h2>My problem</h2>
+            <ul>
+                <li>Read-only archived JSON log files on NFS</li>
+                <li>Average 450MiB gzipped, 4GiB uncompressed</li>
+                <li>Occasionally need to find entries by a unique ID</li>
+            </ul>
+        </section>
+
+        <section>
+            <h2>zgrep</h2>
+            <pre class="fragment"><code>$ time zgrep -E '^{"eventId":63181572,' audit.log.gz
+{"eventId":63181572,...}
+14.29user 1.36system 0:13.98elapsed 111%CPU
+759096inputs+0outputs</code></pre>
+            <ul class="fragment">
+                <li>zgrep has to uncompress every byte of the file to search it!</li>
+                <li>Could index file</li>
+                <li>...but then would need to be able to seek within gzip file</li>
+            </ul>
+        </section>
+
+        <section>
+            <h2>Inside a gzipped file</h2>
+
+            <ul>
+                <li>Sequence of blocks</li>
+                <li>Blocks may be uncompressed or compressed</li>
+                <li>Compressed blocks use Huffman-encoded LZ77</li>
+            </ul>
+        </section>
+
+        <section>
+            <h2>LZ77 decoder</h2>
+
+            <p>Each symbol can be:</p>
+            <ul>
+                <li>A literal byte (e.g. <span class="decomp">'A'</span> or <span class="decomp">'\xff'</span>)</li>
+                <li>A back-reference and length (Copy 5, distance 3)</li>
+                <li>The "end of block" marker</li>
+            </ul>
+        </section>
+
+        <section>
+            <h2>Example</h2>
+
+            <p align="center">"<span class="decomp">Nom nom nom gzip files!!!!!</span>"</p>
+            <table class="fragment">
+                <tr>
+                    <td>"<span class="decomp">Nom n</span>"</td>
+                    <td>"<span class="new decomp">Nom n</span>"</td>
+                </tr>
+                <tr>
+                    <td>Copy 7, distance 4</td>
+                    <td>"<span class="decomp">Nom n</span><span class="decomp new">om nom&nbsp;</span>"</td>
+                </tr>
+                <tr>
+                    <td>"<span class="decomp">gzip files!</span>"</td>
+                    <td>"<span class="decomp">Nom nom nom&nbsp;</span><span class="decomp new">gzip files!</span>"</td>
+                </tr>
+                <tr>
+                    <td>Copy 4, distance 1</td>
+                    <td>"<span class="decomp">Nom nom nom gzip files!</span><span class="decomp new">!!!!</span>"</td>
+                </tr>
+                <tr>
+                    <td>End of block</td>
+                    <td>"<span class="decomp">Nom nom nom gzip files!!!!!</span>"</td>
+                </tr>
+            </table>
+        </section>
+
+        <section>
+            <h2>zindex</h2>
+            <ul>
+                <li>Decompress, find line offsets and index</li>
+                <li>Checkpoint gzip state every few MiB</li>
+                <li>32KiB of data for checkpoint</li>
+            </ul>
+        </section>
+        <section>
+            <h2>zq</h2>
+            <ul>
+                <li>Look up line number in index</li>
+                <li>Look up file offset of line in index</li>
+                <li>Get latest checkpoint prior to offset</li>
+                <li>Initialize gzip library with 32KiB history</li>
+                <li>Skip forward until offset</li>
+            </ul>
+        </section>
+
+        <section>
+            <h2>Example!</h2>
+            <pre><code class="shell">$ zindex --regex '^\\{"eventId":([0-9]+)'
+    --unique --numeric audit.log.gz
+$ ls -lh audit.log.gz*
+-rw-rw-r-- 1.6G audit.log.gz
+-rw-rw-r--  63M audit.log.gz.zindex
+$ time zq audit.log.gz 63181572
+{"eventId":63181572,...}
+0.03user 0.00system 0:00.17elapsed 18%CPU
+392inputs+0outputs</code></pre>
+        </section>
+
+        <section>
+            <h2>Questions?</h2>
+
+            <p>
+                <a href="https://github.com/mattgodbolt/zindex">github.com/mattgodbolt/zindex</a><br>
+                <a href="https://twitter.com/mattgodbolt">@mattgodbolt</a>
             </p>
         </section>
     </div>

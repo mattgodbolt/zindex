@@ -1335,3 +1335,12 @@ html:-moz-full-screen-ancestor {
 
 .zoomed .reveal .roll span:after {
   visibility: hidden; }
+
+
+/* preso styles */
+span.decomp {
+    font-family: monospace;
+    font-size: smaller;
+    color: #999999;
+}
+.decomp.new { color: #ff2222; }
