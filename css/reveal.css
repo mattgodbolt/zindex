@@ -1336,11 +1336,36 @@ html:-moz-full-screen-ancestor {
 .zoomed .reveal .roll span:after {
   visibility: hidden; }
 
-
 /* preso styles */
 span.decomp {
     font-family: monospace;
     font-size: smaller;
     color: #999999;
 }
-.decomp.new { color: #ff2222; }
+
+.decomp.new {
+    color: #ff2222;
+}
+
+table.comp {
+    border-bottom: 1px solid white;
+}
+
+table.comp th {
+    border: none;
+    white-space: nowrap;
+    font-family: monospace;
+    font-size: 16pt;
+}
+
+table.comp td {
+    border: 1px solid white;
+}
+
+td.comp {
+    font-size: smaller;
+}
+
+td.comp.a { background-color: #330000; }
+td.comp.b { background-color: #003300; }
+td.comp.c { background-color: #000033; }

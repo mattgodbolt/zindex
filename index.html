@@ -55,22 +55,22 @@
         <section>
             <h2>My problem</h2>
             <ul>
-                <li>Read-only archived JSON log files on NFS</li>
+                <li>5000+ read-only archived JSON log files on NFS</li>
                 <li>Average 450MiB gzipped, 4GiB uncompressed</li>
-                <li>Occasionally need to find entries by a unique ID</li>
+                <li>Need to find entries by a unique ID</li>
             </ul>
         </section>
 
         <section>
             <h2>zgrep</h2>
-            <pre class="fragment"><code>$ time zgrep -E '^{"eventId":63181572,' audit.log.gz
+            <pre><code>$ zgrep -E '^{"eventId":63181572,' audit.log.gz
 {"eventId":63181572,...}
-14.29user 1.36system 0:13.98elapsed 111%CPU
-759096inputs+0outputs</code></pre>
+</code></pre>
             <ul class="fragment">
-                <li>zgrep has to uncompress every byte of the file to search it!</li>
-                <li>Could index file</li>
-                <li>...but then would need to be able to seek within gzip file</li>
+                <li>Takes 14 seconds</li>
+                <li class="fragment">zgrep has to uncompress every byte of the file to search it!</li>
+                <li class="fragment">Could index file</li>
+                <li class="fragment">...but then would need to be able to seek within gzip file</li>
             </ul>
         </section>
 
@@ -90,7 +90,10 @@
             <p>Each symbol can be:</p>
             <ul>
                 <li>A literal byte (e.g. <span class="decomp">'A'</span> or <span class="decomp">'\xff'</span>)</li>
-                <li>A back-reference and length (Copy 5, distance 3)</li>
+                <li>A back-reference and length (Copy 5, distance 3).
+                    <ul>
+                        <li>Limited to 32KiB back</li>
+                    </ul>
                 <li>The "end of block" marker</li>
             </ul>
         </section>
@@ -100,6 +103,10 @@
 
             <p align="center">"<span class="decomp">Nom nom nom gzip files!!!!!</span>"</p>
             <table class="fragment">
+                <tr>
+                    <td>Compressed block</td>
+                    <td>""</td>
+                </tr>
                 <tr>
                     <td>"<span class="decomp">Nom n</span>"</td>
                     <td>"<span class="new decomp">Nom n</span>"</td>
@@ -124,6 +131,54 @@
         </section>
 
         <section>
+            <h2>Seeking</h2>
+
+            <table class="comp">
+                <tr>
+                    <th>0</th>
+                    <th>45632</th>
+                    <th>88775</th>
+                </tr>
+                <tr>
+                    <td class="comp a">Uncompressed 1</td>
+                    <td class="comp b">Uncompressed 2</td>
+                    <td class="comp c">Uncompressed 3</td>
+                </tr>
+            </table>
+            <br>
+            <table class="comp">
+                <tr>
+                    <th>0</th>
+                    <th>3788</th>
+                    <th>9876</th>
+                </tr>
+                <tr>
+                    <td class="comp a">Comp block 1</td>
+                    <td class="comp b">Comp block 2</td>
+                    <td class="comp c">Comp block 3</td>
+                </tr>
+            </table>
+            <br>
+            <table class="fragment">
+                <tr>
+                    <th>Compr.<br>Offset</th>
+                    <th>Uncompr.<br>Offset</th>
+                    <th>Context</th>
+                </tr>
+                <tr>
+                    <td class="comp b">45632</td>
+                    <td class="comp b">3788</td>
+                    <td class="comp a">...ressed 1</td>
+                </tr>
+                <tr>
+                    <td class="comp c">88775</td>
+                    <td class="comp c">9876</td>
+                    <td class="comp b">...ressed 2</td>
+                </tr>
+            </table>
+        </section>
+
+        <section>
             <h2>zindex</h2>
             <ul>
                 <li>Decompress, find line offsets and index</li>
@@ -137,7 +192,7 @@
                 <li>Look up line number in index</li>
                 <li>Look up file offset of line in index</li>
                 <li>Get latest checkpoint prior to offset</li>
-                <li>Initialize gzip library with 32KiB history</li>
+                <li>Initialize gzip library with 32KiB context</li>
                 <li>Skip forward until offset</li>
             </ul>
         </section>
@@ -149,10 +204,12 @@
 $ ls -lh audit.log.gz*
 -rw-rw-r-- 1.6G audit.log.gz
 -rw-rw-r--  63M audit.log.gz.zindex
-$ time zq audit.log.gz 63181572
-{"eventId":63181572,...}
-0.03user 0.00system 0:00.17elapsed 18%CPU
-392inputs+0outputs</code></pre>
+$ zq audit.log.gz 63181572
+{"eventId":63181572,...}</code></pre>
+            <ul class="fragment">
+                <li>Takes 0.03s</li>
+                <li>47,000% faster than zrep (14s)</li>
+            </ul>
         </section>
 
         <section>
