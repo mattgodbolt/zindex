@@ -161,8 +161,8 @@
             <br>
             <table class="fragment">
                 <tr>
-                    <th>Compr.<br>Offset</th>
-                    <th>Uncompr.<br>Offset</th>
+                    <th>Offset</th>
+                    <th>gzip offset</th>
                     <th>Context</th>
                 </tr>
                 <tr>
@@ -198,17 +198,23 @@
         </section>
 
         <section>
-            <h2>Example!</h2>
-            <pre><code class="shell">$ zindex --regex '^\\{"eventId":([0-9]+)'
-    --unique --numeric audit.log.gz
-$ ls -lh audit.log.gz*
--rw-rw-r-- 1.6G audit.log.gz
--rw-rw-r--  63M audit.log.gz.zindex
-$ zq audit.log.gz 63181572
+            <h2>Building an index</h2>
+            <pre><code class="shell">$ zindex \
+    --regex '^{"eventId":([0-9]+),' \
+    --unique --numeric audit.log.gz</code></pre>
+            <ul class="fragment">
+                <li>Creates a SQLite index file</li>
+                <li>1.6GiB compressed input, 63MiB index</li>
+                <li>Takes 90s</li>
+            </ul>
+        </section>
+        <section>
+            <h2>Querying</h2>
+            <pre><code class="shell">$ zq audit.log.gz 63181572
 {"eventId":63181572,...}</code></pre>
             <ul class="fragment">
                 <li>Takes 0.03s</li>
-                <li>47,000% faster than zrep (14s)</li>
+                <li>47,000% faster than zgrep (14s)</li>
             </ul>
         </section>
 
