@@ -63,7 +63,7 @@
 
         <section>
             <h2>zgrep</h2>
-            <pre><code>$ zgrep -E '^{"eventId":63181572,' audit.log.gz
+            <pre><code>$ zgrep -E '^\{"eventId":63181572,' audit.log.gz
 {"eventId":63181572,...}
 </code></pre>
             <ul class="fragment">
@@ -200,7 +200,7 @@
         <section>
             <h2>Building an index</h2>
             <pre><code class="shell">$ zindex \
-    --regex '^{"eventId":([0-9]+),' \
+    --regex '^\{"eventId":([0-9]+),' \
     --unique --numeric audit.log.gz</code></pre>
             <ul class="fragment">
                 <li>Creates a SQLite index file</li>
