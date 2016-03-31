@@ -41,6 +41,9 @@ int Main(int argc, const char *argv[]) {
             0, "bytes", cmd);
     ValueArg<string> regex("", "regex", "Create an index using <regex>", false,
                            "", "regex", cmd);
+    ValueArg<uint> capture("", "capture",
+                           "Determines which capture group in an regex to use",
+                           false, 0, "capture", cmd);
     ValueArg<uint64_t> skipFirst("", "skip-first", "Skip the first <num> lines",
                                  false, 0, "num", cmd);
     ValueArg<int> field("f", "field", "Create an index using field <num> "
@@ -92,10 +95,11 @@ int Main(int argc, const char *argv[]) {
                     "Sorry; multiple indices are not supported yet");
         }
         if (regex.isSet()) {
+            auto regexIndexer = new RegExpIndexer(regex.getValue(),
+                                                  capture.getValue());
             builder.addIndexer("default", regex.getValue(), numeric.isSet(),
                                unique.isSet(),
-                               std::unique_ptr<LineIndexer>(
-                                       new RegExpIndexer(regex.getValue())));
+                               std::unique_ptr<LineIndexer>(regexIndexer));
         }
         if (field.isSet()) {
             ostringstream name;

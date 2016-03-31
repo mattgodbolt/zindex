@@ -27,4 +27,10 @@ TEST_CASE("indexes", "[RegExpIndexer]") {
         CHECK(sink.captured ==
               vs({ "0", "1", "2", "3", "4", "5", "6", "7", "8", "9" }));
     }
+    SECTION("multiple capture groups - matches specified group") {
+        RegExpIndexer multipleCaptureGroups("(New|Update)\\|([^|]+)", 2);
+        CaptureSink sink;
+        multipleCaptureGroups.index(sink, "New|2-id|0");
+        CHECK(sink.captured == vs({ "2-id" }));
+    }
 }
