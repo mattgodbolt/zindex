@@ -83,7 +83,8 @@ int Main(int argc, const char *argv[]) {
                        "Don't print a separator between non-overlapping contexts",
                        cmd);
     ValueArg<string> sepArg("S", "separator",
-                            "Print SEPARATOR between non-overlapping contexts (if -A, -B or -C specified)",
+                            "Print SEPARATOR between non-overlapping contexts "
+                                    "(if -A, -B or -C specified)",
                             false, "--", "SEPARATOR", cmd);
     ValueArg<string> indexArg("", "index-file", "Use index from <index-file> "
             "(default <file>.zindex)", false, "", "index", cmd);

@@ -51,7 +51,7 @@ struct Progress {
     Log &log;
     static constexpr auto LogProgressEverySecs = 20u;
 
-    Progress(Log &log) : log(log) {}
+    Progress(Log &log) : log(log) { }
 
     template<typename Printer>
     void update(size_t progress, size_t of) {
@@ -194,6 +194,23 @@ struct NumericHandler : IndexHandler {
     }
 };
 
+struct CachedContext {
+    size_t uncompressedOffset_;
+    size_t blockSize_;
+    uint8_t input_[ChunkSize];
+    ZStream zs_;
+    explicit CachedContext(size_t uncompressedOffset, size_t blockSize)
+            : uncompressedOffset_(uncompressedOffset),
+              blockSize_(blockSize),
+              zs_(ZStream::Type::Raw) {}
+
+    bool offsetWithinRange(size_t offset) const {
+        if (offset < uncompressedOffset_) return false; // can't seek backwards
+        size_t jumpAhead = offset - uncompressedOffset_;
+        return jumpAhead < blockSize_;
+    }
+};
+
 }
 
 struct Index::Impl {
@@ -202,6 +219,8 @@ struct Index::Impl {
     Sqlite db_;
     Sqlite::Statement lineQuery_;
     Index::Metadata metadata_;
+    size_t blockSize_;
+    std::unique_ptr<CachedContext> cachedContext_;
 
     Impl(Log &log, File &&fromCompressed, Sqlite &&db)
             : log_(log), compressed_(std::move(fromCompressed)),
@@ -224,6 +243,14 @@ LIMIT 1)")) {
         } catch (const std::exception &e) {
             log.warn("Caught exception reading metadata: ", e.what());
         }
+        auto stmt = db_.prepare(
+                "SELECT MAX(uncompressedEndOffset)/COUNT(*) FROM AccessPoints");
+        if (stmt.step()) {
+            blockSize_ = 32 * 1024 * 1024;
+        } else {
+            blockSize_ = stmt.columnInt64(0);
+        }
+        log_.debug("Average block size ", PrettyBytes(blockSize_));
     }
 
     void init(bool force) {
@@ -267,7 +294,7 @@ LIMIT 1)")) {
     }
 
     size_t queryIndex(const std::string &index, const std::string &query,
-                    LineFunction lineFunc) {
+                      LineFunction lineFunc) {
         auto stmt = db_.prepare(R"(
 SELECT line FROM index_)" + index + R"(
 WHERE key = :query
@@ -284,40 +311,56 @@ WHERE key = :query
     size_t indexSize(const std::string &index) const {
         auto stmt = db_.prepare("SELECT COUNT(*) FROM index_" + index);
         if (stmt.step()) return 0;
-        return stmt.columnInt64(0);
+        return static_cast<size_t>(stmt.columnInt64(0));
     }
 
     void print(Sqlite::Statement &q, LineSink &sink) {
-        auto line = q.columnInt64(0);
-        auto offset = q.columnInt64(1);
-        auto compressedOffset = q.columnInt64(2);
-        auto uncompressedOffset = q.columnInt64(3);
-        auto length = q.columnInt64(4);
-        auto bitOffset = q.columnInt64(5);
-        uint8_t window[WindowSize];
-        uncompress(q.columnBlob(6), window, WindowSize);
+        auto line = static_cast<size_t>(q.columnInt64(0));
+        auto offset = static_cast<size_t>(q.columnInt64(1));
+        // We use and update context while in here. Only if we successfully
+        // decode a line do we save it in the cachedContext_ for a subsequent
+        // call.
+        std::unique_ptr<CachedContext> context;
+        if (cachedContext_ && cachedContext_->offsetWithinRange(offset)) {
+            // We can reuse the previous context.
+            log_.debug("Reusing previous context");
+            context = std::move(cachedContext_);
+        } else {
+            auto compressedOffset = static_cast<size_t>(q.columnInt64(2));
+            auto uncompressedOffset = static_cast<size_t>(q.columnInt64(3));
+            auto bitOffset = static_cast<int>(q.columnInt64(5));
+            log_.debug("Creating new context at offset ", compressedOffset);
+            context.reset(new CachedContext(uncompressedOffset, blockSize_));
+            uint8_t window[WindowSize];
+            uncompress(q.columnBlob(6), window, WindowSize);
 
-        ZStream zs(ZStream::Type::Raw);
-        uint8_t input[ChunkSize];
+            seek(compressed_, bitOffset ? compressedOffset - 1
+                                        : compressedOffset);
+            context->zs_.stream.avail_in = 0;
+            if (bitOffset) {
+                auto c = fgetc(compressed_.get());
+                if (c == -1)
+                    throw ZlibError(ferror(compressed_.get()) ?
+                                    Z_ERRNO : Z_DATA_ERROR);
+                X(inflatePrime(&context->zs_.stream,
+                               bitOffset, c >> (8 - bitOffset)));
+            }
+            X(inflateSetDictionary(&context->zs_.stream,
+                                   &window[0], WindowSize));
+        }
         uint8_t discardBuffer[WindowSize];
 
-        seek(compressed_, bitOffset ? compressedOffset - 1 : compressedOffset);
-        if (bitOffset) {
-            auto c = fgetc(compressed_.get());
-            if (c == -1)
-                throw ZlibError(ferror(compressed_.get()) ?
-                                Z_ERRNO : Z_DATA_ERROR);
-            X(inflatePrime(&zs.stream, bitOffset, c >> (8 - bitOffset)));
-        }
-        X(inflateSetDictionary(&zs.stream, &window[0], WindowSize));
+        auto length = q.columnInt64(4);
+        constexpr auto MaxLength = 64u * 1024 * 1024;
+        if (length >= MaxLength) throw std::runtime_error("Line too long!");
 
         uint8_t lineBuf[length];
-        auto numToSkip = offset - uncompressedOffset;
+        auto numToSkip = offset - context->uncompressedOffset_;
         bool skipping = true;
-        zs.stream.avail_in = 0;
+        auto &zs = context->zs_;
         do {
             if (numToSkip == 0 && skipping) {
-                zs.stream.avail_out = length;
+                zs.stream.avail_out = static_cast<uInt>(length);
                 zs.stream.next_out = lineBuf;
                 skipping = false;
             }
@@ -332,19 +375,25 @@ WHERE key = :query
             }
             do {
                 if (zs.stream.avail_in == 0) {
-                    zs.stream.avail_in = ::fread(input, 1, sizeof(input),
+                    zs.stream.avail_in = ::fread(context->input_, 1,
+                                                 sizeof(context->input_),
                                                  compressed_.get());
                     if (ferror(compressed_.get())) throw ZlibError(Z_ERRNO);
                     if (zs.stream.avail_in == 0) throw ZlibError(Z_DATA_ERROR);
-                    zs.stream.next_in = input;
+                    zs.stream.next_in = context->input_;
                 }
+                auto availBefore = zs.stream.avail_out;
                 auto ret = inflate(&zs.stream, Z_NO_FLUSH);
                 if (ret == Z_NEED_DICT) throw ZlibError(Z_DATA_ERROR);
                 if (ret == Z_MEM_ERROR || ret == Z_DATA_ERROR)
                     throw ZlibError(ret);
+                auto numUncompressed = availBefore - zs.stream.avail_out;
+                context->uncompressedOffset_ += numUncompressed;
                 if (ret == Z_STREAM_END) break;
             } while (zs.stream.avail_out);
         } while (skipping);
+        // Save the context for next time.
+        cachedContext_ = std::move(context);
         sink.onLine(line, offset, reinterpret_cast<const char *>(lineBuf),
                     length - 1);
     }
@@ -648,14 +697,13 @@ size_t Index::getLines(const std::vector<uint64_t> &lines, LineSink &sink) {
 }
 
 size_t Index::queryIndex(const std::string &index, const std::string &query,
-                       LineFunction lineFunction) {
+                         LineFunction lineFunction) {
     return impl_->queryIndex(index, query, lineFunction);
 }
 
 size_t Index::queryIndexMulti(const std::string &index,
-                            const std::vector<std::string> &queries,
-                            LineFunction lineFunction) {
-    // TODO be a little smarter about this.
+                              const std::vector<std::string> &queries,
+                              LineFunction lineFunction) {
     size_t result = 0;
     for (auto query : queries)
         result += impl_->queryIndex(index, query, lineFunction);
