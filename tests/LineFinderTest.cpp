@@ -12,10 +12,11 @@ struct RecordingSink : LineSink {
     std::vector<std::string> lines;
     std::vector<size_t> fileOffsets;
 
-    void onLine(size_t, size_t offset,
+    bool onLine(size_t, size_t offset,
             const char *line, size_t length) override {
         lines.emplace_back(line, length);
         fileOffsets.emplace_back(offset);
+        return true;
     }
 
     bool empty() const {

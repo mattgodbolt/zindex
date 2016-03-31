@@ -35,6 +35,9 @@ int Main(int argc, const char *argv[]) {
     SwitchArg forceColor("", "color", "Use color even on non-TTY", cmd);
     SwitchArg numeric("n", "numeric", "Assume the index is numeric", cmd);
     SwitchArg unique("u", "unique", "Assume each line's index is unique", cmd);
+    SwitchArg sparse("s", "sparse", "Sparse - only save line offsets for rows"
+            " that have ids. Merges all rows that have no id to the most recent"
+            "id. Useful if your file is one id row followed by n data rows.", cmd);
     ValueArg<uint64_t> checkpointEvery(
             "", "checkpoint-every",
             "Create a compression checkpoint every <bytes>", false,
@@ -98,7 +101,7 @@ int Main(int argc, const char *argv[]) {
             auto regexIndexer = new RegExpIndexer(regex.getValue(),
                                                   capture.getValue());
             builder.addIndexer("default", regex.getValue(), numeric.isSet(),
-                               unique.isSet(),
+                               unique.isSet(), sparse.isSet(),
                                std::unique_ptr<LineIndexer>(regexIndexer));
         }
         if (field.isSet()) {
@@ -106,7 +109,8 @@ int Main(int argc, const char *argv[]) {
             name << "Field " << field.getValue() << " delimited by '"
             << delimiter.getValue() << "'";
             builder.addIndexer("default", name.str(), numeric.isSet(),
-                               unique.isSet(), std::unique_ptr<LineIndexer>(
+                               unique.isSet(), sparse.isSet(),
+                               std::unique_ptr<LineIndexer>(
                             new FieldIndexer(delimiter.getValue(),
                                              field.getValue())));
         }
@@ -117,6 +121,7 @@ int Main(int argc, const char *argv[]) {
                                         delimiter.getValue()));
             builder.addIndexer("default", externalIndexer.getValue(),
                                numeric.isSet(), unique.isSet(),
+                               sparse.isSet(),
                                std::move(indexer));
         }
         if (checkpointEvery.isSet())

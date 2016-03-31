@@ -113,6 +113,7 @@ public:
                             const std::string &creation,
                             bool numeric,
                             bool unique,
+                            bool sparse,
                             std::unique_ptr<LineIndexer> indexer);
 
         // Build the index. Once this method's been called, the Builder should
