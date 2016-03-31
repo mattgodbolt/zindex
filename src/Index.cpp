@@ -28,7 +28,6 @@ namespace {
 constexpr auto DefaultIndexEvery = 32 * 1024 * 1024u;
 constexpr auto WindowSize = 32768u;
 constexpr auto ChunkSize = 16384u;
-constexpr auto LogProgressEverySecs = 20;
 constexpr auto Version = 1;
 
 void seek(File &f, uint64_t pos) {
@@ -46,6 +45,26 @@ struct ZlibError : std::runtime_error {
 void X(int zlibErr) {
     if (zlibErr != Z_OK) throw ZlibError(zlibErr);
 }
+
+struct Progress {
+    time_t nextProgress = 0;
+    Log &log;
+    static constexpr auto LogProgressEverySecs = 20u;
+
+    Progress(Log &log) : log(log) {}
+
+    template<typename Printer>
+    void update(size_t progress, size_t of) {
+        auto now = time(nullptr);
+        if (now < nextProgress) return;
+        char pc[16];
+        snprintf(pc, sizeof(pc) - 1, "%.2f",
+                 (progress * 100.0) / of);
+        log.info("Progress: ", Printer(progress), " of ",
+                 Printer(of), " (", pc, "%)");
+        nextProgress = now + LogProgressEverySecs;
+    }
+};
 
 size_t makeWindow(uint8_t *out, size_t outSize, const uint8_t *in,
                   uint64_t left) {
@@ -430,7 +449,7 @@ INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
         uint8_t window[WindowSize];
 
         int ret = 0;
-        time_t nextProgress = 0;
+        Progress progress(log);
         uint64_t totalIn = 0;
         uint64_t totalOut = 0;
         uint64_t last = 0;
@@ -491,16 +510,7 @@ INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
                             .bindBlob(":window", apWindow, size);
                     last = totalOut;
                 }
-                auto now = time(nullptr);
-                if (now >= nextProgress) {
-                    char pc[16];
-                    snprintf(pc, sizeof(pc) - 1, "%.2f",
-                             (totalIn * 100.0) / compressedStat.st_size);
-                    log.info("Progress: ", PrettyBytes(totalIn), " of ",
-                             PrettyBytes(compressedStat.st_size),
-                             " (", pc, "%)");
-                    nextProgress = now + LogProgressEverySecs;
-                }
+                progress.update<PrettyBytes>(totalIn, compressedStat.st_size);
             } while (zs.stream.avail_in);
         } while (ret != Z_STREAM_END);
 
@@ -511,7 +521,7 @@ INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
                     .step();
         }
 
-        log.info("Index reading complete");
+        log.info("Index building complete; creating line index");
 
         finder.add(window, WindowSize - zs.stream.avail_out, true);
         const auto &lineOffsets = finder.lineOffsets();
@@ -523,6 +533,7 @@ INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
                     .bindInt64(":length",
                                lineOffsets[line + 1] - lineOffsets[line])
                     .step();
+            progress.update<size_t>(line, lineOffsets.size() - 1);
         }
 
         log.info("Flushing");
