@@ -6,8 +6,11 @@
 #include "IndexSink.h"
 
 RegExpIndexer::RegExpIndexer(const std::string &regex)
-        : re_(regex) {
-}
+        : RegExpIndexer(regex, 0) { }
+
+RegExpIndexer::RegExpIndexer(const std::string &regex, uint captureGroup)
+        : re_(regex),
+          captureGroup_(captureGroup) { }
 
 void RegExpIndexer::index(IndexSink &sink, StringView line) {
     RegExp::Matches result;
@@ -15,13 +18,26 @@ void RegExpIndexer::index(IndexSink &sink, StringView line) {
     auto lineString = line.str();
     while (offset < lineString.length()) {
         if (!re_.exec(lineString, result, offset)) return;
-        if (result.size() == 1)
-            onMatch(sink, lineString, offset, result[0]);
-        else if (result.size() == 2)
-            onMatch(sink, lineString, offset, result[1]);
-        else
-            throw std::runtime_error(
-                    "Expected exactly one match (or one paren match)");
+
+        // Magic number - indicates the default use case in which
+        // a user has not specified the desired capture group
+        if (captureGroup_ == 0) {
+            if (result.size() == 1)
+                onMatch(sink, lineString, offset, result[0]);
+            else if (result.size() == 2)
+                onMatch(sink, lineString, offset, result[1]);
+            else
+                throw std::runtime_error(
+                        "Expected exactly one match (or one capture group - "
+                                "use '--capture' option if you have multiple "
+                                "capture groups)");
+        } else {
+            if (result.size() > captureGroup_)
+                onMatch(sink, lineString, offset, result[captureGroup_]);
+            else
+                throw std::runtime_error(
+                        "Did not find a match in the given capture group");
+        }
         offset += result[0].second;
     }
 }

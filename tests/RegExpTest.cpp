@@ -37,6 +37,17 @@ TEST_CASE("matches", "[RegExp]") {
     REQUIRE(S(against, matches[1]) == "123234");
 }
 
+TEST_CASE("multiple capture groups", "[RegExp]") {
+    RegExp r("(New|Update)\\|([^|]+)");
+    RegExp::Matches matches;
+    char const *against = "New|2-id|0";
+    REQUIRE(r.exec(against, matches) == true);
+    REQUIRE(matches.size() == 3);
+    REQUIRE(S(against, matches[0]) == "New|2-id");
+    REQUIRE(S(against, matches[1]) == "New");
+    REQUIRE(S(against, matches[2]) == "2-id");
+}
+
 TEST_CASE("moves", "[RegExp]") {
     RegExp r("[a-z]+");
     RegExp::Matches matches;
