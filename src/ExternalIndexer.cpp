@@ -92,6 +92,8 @@ ExternalIndexer::~ExternalIndexer() {
         log_.debug("Waiting on child");
         waitpid(childPid_, &status, 0);
         log_.debug("Child exited");
+        signal(SIGCHLD, SIG_DFL);
+        signal(SIGPIPE, SIG_DFL);
     }
 }
 
