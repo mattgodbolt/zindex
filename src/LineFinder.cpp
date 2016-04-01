@@ -2,7 +2,6 @@
 
 #include "LineSink.h"
 
-#include <algorithm>
 #include <cstring>
 
 LineFinder::LineFinder(LineSink &sink)
@@ -18,7 +17,7 @@ void LineFinder::add(const uint8_t *data, uint64_t length, bool last) {
             lineData(data, lineEnd);
             data = lineEnd + 1;
         } else {
-            std::copy(data, endData, std::back_inserter(lineBuffer_));
+            append(data, endData);
             break;
         }
     }
@@ -36,7 +35,7 @@ void LineFinder::lineData(const uint8_t *begin, const uint8_t *end) {
                      reinterpret_cast<const char *>(begin), end - begin);
         length = (end - begin) + 1;
     } else {
-        std::copy(begin, end, std::back_inserter(lineBuffer_));
+        append(begin, end);
         shouldAddLine = sink_.onLine(lineOffsets_.size() + 1, currentLineOffset_,
                      &lineBuffer_[0], lineBuffer_.size());
         length = lineBuffer_.size() + 1;
@@ -45,4 +44,13 @@ void LineFinder::lineData(const uint8_t *begin, const uint8_t *end) {
     if (shouldAddLine)
         lineOffsets_.emplace_back(currentLineOffset_);
     currentLineOffset_ += length;
+}
+
+void LineFinder::append(const uint8_t *begin, const uint8_t *end) {
+    // Was: std::copy(begin, end, std::back_inserter(lineBuffer_));
+    // but it turns out that's pretty slow... so let's do this instead:
+    auto offset = lineBuffer_.size();
+    auto size = end - begin;
+    lineBuffer_.resize(offset + size);
+    std::memcpy(lineBuffer_.data() + offset, begin, size);
 }

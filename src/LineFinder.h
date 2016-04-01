@@ -26,4 +26,5 @@ public:
 
 private:
     void lineData(const uint8_t *begin, const uint8_t *end);
+    void append(const uint8_t *begin, const uint8_t *end);
 };
