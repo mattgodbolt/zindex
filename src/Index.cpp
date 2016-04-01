@@ -111,18 +111,21 @@ struct IndexHandler : IndexSink {
     Log &log;
     std::unique_ptr<LineIndexer> indexer;
     uint64_t currentLine;
+    bool indexed = false;
 
     IndexHandler(Log &log, std::unique_ptr<LineIndexer> indexer) :
             log(log), indexer(std::move(indexer)), currentLine(0) { }
 
     virtual ~IndexHandler() { }
 
-    void onLine(uint64_t lineNumber, const char *line, size_t length) {
+    bool onLine(uint64_t lineNumber, const char *line, size_t length) {
         try {
+            indexed = false;
             currentLine = lineNumber;
             StringView stringView(line, length);
             log.debug("Indexing line '", stringView, "'");
             indexer->index(*this, stringView);
+            return indexed;
         } catch (const std::exception &e) {
             throw std::runtime_error(
                     "Failed to index line " + std::to_string(currentLine)
@@ -141,6 +144,7 @@ struct AlphaHandler : IndexHandler {
               insert(std::move(insert)) { }
 
     void add(StringView key, size_t offset) override {
+        indexed = true;
         log.debug("Found key '", key, "'");
         insert
                 .reset()
@@ -160,6 +164,7 @@ struct NumericHandler : IndexHandler {
               insert(std::move(insert)) { }
 
     void add(StringView key, size_t offset) override {
+        indexed = true;
         auto index = key.begin();
         auto initIndex = key.begin();
         auto indexLength = key.length();
@@ -418,6 +423,7 @@ struct Index::Builder::Impl : LineSink {
     Sqlite::Statement addMetaSql;
     uint64_t indexEvery = DefaultIndexEvery;
     std::unordered_map<std::string, std::unique_ptr<IndexHandler>> indexers;
+    bool saveAllLines_;
 
     Impl(Log &log, File &&from, const std::string &fromPath,
          const std::string &indexFilename)
@@ -458,6 +464,7 @@ CREATE TABLE Metadata(
         }
         addMeta("compressedSize", std::to_string(stats.st_size));
         addMeta("compressedModTime", std::to_string(stats.st_mtime));
+        addMeta("sparse", std::to_string(!saveAllLines_));
 
         db.exec(R"(
 CREATE TABLE LineOffsets(
@@ -600,8 +607,9 @@ INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
     }
 
     void addIndexer(const std::string &name, const std::string &creation,
-                    bool numeric, bool unique,
+                    bool numeric, bool unique, bool sparse,
                     std::unique_ptr<LineIndexer> indexer) {
+        saveAllLines_ = !sparse;
         auto table = "index_" + name;
         std::string type = numeric ? "INTEGER" : "TEXT";
         if (unique) type += " PRIMARY KEY";
@@ -632,14 +640,16 @@ INSERT INTO )" + table + R"( VALUES(:key, :line, :offset)
         }
     }
 
-    void onLine(
+    bool onLine(
             size_t lineNumber,
             size_t /*fileOffset*/,
             const char *line, size_t length) override {
-        if (lineNumber <= skipFirst) return;
+        if (lineNumber <= skipFirst) return true;
+        bool consumed = false;
         for (auto &&pair : indexers) {
-            pair.second->onLine(lineNumber, line, length);
+            consumed |= pair.second->onLine(lineNumber, line, length);
         }
+        return consumed || saveAllLines_;
     }
 };
 
@@ -654,8 +664,9 @@ Index::Builder &Index::Builder::addIndexer(
         const std::string &creation,
         bool numeric,
         bool unique,
+        bool sparse,
         std::unique_ptr<LineIndexer> indexer) {
-    impl_->addIndexer(name, creation, numeric, unique, std::move(indexer));
+    impl_->addIndexer(name, creation, numeric, unique, sparse, std::move(indexer));
     return *this;
 }
 

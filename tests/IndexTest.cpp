@@ -18,10 +18,11 @@ namespace {
 struct CaptureSink : LineSink {
     vector<string> captured;
 
-    virtual void onLine(size_t /*lineNumber*/,
+    virtual bool onLine(size_t /*lineNumber*/,
                         size_t /*fileOffset*/, const char *line,
                         size_t length) override {
         captured.emplace_back(line, length);
+        return true;
     }
 };
 
@@ -49,7 +50,7 @@ TEST_CASE("indexes files", "[Index]") {
                                testFile, testFile + ".zindex");
         unique_ptr<LineIndexer> indexer(new RegExpIndexer("^Line ([0-9]+)"));
         builder
-                .addIndexer("default", "blah", true, true, move(indexer))
+                .addIndexer("default", "blah", true, true, false, move(indexer))
                 .indexEvery(256 * 1024)
                 .build();
         Index index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
@@ -86,7 +87,7 @@ TEST_CASE("indexes files", "[Index]") {
                                testFile, testFile + ".zindex");
         unique_ptr<LineIndexer> indexer(new RegExpIndexer("Mod ([0-9]+)"));
         CHECK_THROWS(
-                builder.addIndexer("default", "blah", true, true,
+                builder.addIndexer("default", "blah", true, true, false,
                                    move(indexer))
                         .indexEvery(256 * 1024)
                         .build());
@@ -96,7 +97,7 @@ TEST_CASE("indexes files", "[Index]") {
         Index::Builder builder(log, File(fopen(testFile.c_str(), "rb")),
                                testFile, testFile + ".zindex");
         unique_ptr<LineIndexer> indexer(new RegExpIndexer("Mod ([0-9]+)"));
-        builder.addIndexer("default", "blah", true, false, move(indexer))
+        builder.addIndexer("default", "blah", true, false, false, move(indexer))
                 .indexEvery(256 * 1024)
                 .build();
         Index index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
@@ -129,7 +130,7 @@ TEST_CASE("indexes files", "[Index]") {
                                testFile, testFile + ".zindex");
         unique_ptr<LineIndexer> indexer(new RegExpIndexer("Hex ([0-9a-f]+)"));
         builder
-                .addIndexer("default", "blah", false, true, move(indexer))
+                .addIndexer("default", "blah", false, true, false, move(indexer))
                 .indexEvery(256 * 1024)
                 .build();
         Index index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
@@ -156,7 +157,7 @@ TEST_CASE("indexes files", "[Index]") {
                                testFile, testFile + ".zindex");
         unique_ptr<LineIndexer> indexer(new RegExpIndexer("\\w+"));
         builder
-                .addIndexer("default", "blah", false, false, move(indexer))
+                .addIndexer("default", "blah", false, false, false, move(indexer))
                 .indexEvery(256 * 1024)
                 .build();
         Index index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
@@ -181,7 +182,7 @@ TEST_CASE("indexes files", "[Index]") {
                                testFile, testFile + ".zindex");
         builder.skipFirst(2);
         unique_ptr<LineIndexer> indexer(new FieldIndexer(' ', 2));
-        builder.addIndexer("default", "blah", true, false, move(indexer))
+        builder.addIndexer("default", "blah", true, false, false, move(indexer))
                 .indexEvery(256 * 1024)
                 .build();
         Index index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
@@ -205,6 +206,49 @@ TEST_CASE("indexes files", "[Index]") {
 
 }
 
+TEST_CASE("sparsely indexes files", "[Index]") {
+    TempDir tempDir;
+    CaptureLog log;
+    auto testFile = tempDir.path + "/test.log";
+    {
+        ofstream fileOut(testFile);
+        for (auto i = 1; i <= 65536; ++i) {
+            fileOut << "Line " << i
+            << " - Hex " << hex << i
+            << " - Mod " << dec << (i & 0xff) << endl;
+            fileOut << "Some data" << i
+            << " - DataHex " << hex << i
+            << " - DataMod " << dec << (i & 0xff) << endl;
+        }
+        fileOut.close();
+        REQUIRE(system(("gzip -f " + testFile).c_str()) == 0);
+        testFile = testFile + ".gz";
+    }
+
+    SECTION("does not generate indexes on lines without ids") {
+        Index::Builder builder(log, File(fopen(testFile.c_str(), "rb")),
+                               testFile, testFile + ".zindex");
+        unique_ptr<LineIndexer> indexer(new RegExpIndexer("Line ([^-]+) "));
+        builder
+                .addIndexer("default", "blah", false, false, false, move(indexer))
+                .indexEvery(256 * 1024)
+                .build();
+        Index index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
+                                  testFile + ".zindex", false);
+
+        // Only indexed lines matching "Line ([^-]+) "
+        CHECK(index.indexSize("default") == 65536);
+        auto CheckIndex = [ & ](const string &query, size_t expected) {
+            CaptureSink cs;
+            index.queryIndex("default", query, cs);
+            INFO("query " << "'" << query << "'");
+            CHECK(cs.captured.size() == expected);
+        };
+        CheckIndex("1", 1);
+        CheckIndex("65536", 1);
+    }
+}
+
 TEST_CASE("metadata tests", "[Index]") {
     TempDir tempDir;
     CaptureLog log;
@@ -222,7 +266,7 @@ TEST_CASE("metadata tests", "[Index]") {
                            testFile + ".zindex");
     unique_ptr<LineIndexer> indexer(new RegExpIndexer("\\w+"));
     builder
-            .addIndexer("default", "blah", false, false, move(indexer))
+            .addIndexer("default", "blah", false, false, false, move(indexer))
             .build();
     SECTION("loads metadata") {
         Index index = Index::load(log, File(fopen(testFile.c_str(), "rb")),

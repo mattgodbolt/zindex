@@ -29,18 +29,20 @@ void LineFinder::add(const uint8_t *data, uint64_t length, bool last) {
 }
 
 void LineFinder::lineData(const uint8_t *begin, const uint8_t *end) {
-    lineOffsets_.emplace_back(currentLineOffset_);
     uint64_t length;
+    bool shouldAddLine;
     if (lineBuffer_.empty()) {
-        sink_.onLine(lineOffsets_.size(), currentLineOffset_,
+        shouldAddLine = sink_.onLine(lineOffsets_.size() + 1, currentLineOffset_,
                      reinterpret_cast<const char *>(begin), end - begin);
         length = (end - begin) + 1;
     } else {
         std::copy(begin, end, std::back_inserter(lineBuffer_));
-        sink_.onLine(lineOffsets_.size(), currentLineOffset_,
+        shouldAddLine = sink_.onLine(lineOffsets_.size() + 1, currentLineOffset_,
                      &lineBuffer_[0], lineBuffer_.size());
         length = lineBuffer_.size() + 1;
         lineBuffer_.clear();
     }
+    if (shouldAddLine)
+        lineOffsets_.emplace_back(currentLineOffset_);
     currentLineOffset_ += length;
 }

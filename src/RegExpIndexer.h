@@ -20,5 +20,3 @@ private:
     void onMatch(IndexSink &sink, const std::string &line, size_t offset,
                  const RegExp::Match &match);
 };
-
-

@@ -19,9 +19,10 @@ struct PrintSink : LineSink {
 
     PrintSink(bool printLineNum) : printLineNum(printLineNum) { }
 
-    void onLine(size_t l, size_t, const char *line, size_t length) override {
+    bool onLine(size_t l, size_t, const char *line, size_t length) override {
         if (printLineNum) cout << l << ":";
         cout << string(line, length) << endl;
+        return true;
     }
 };
 
