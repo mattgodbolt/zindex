@@ -27,10 +27,11 @@ cd build
 mkdir -p pgo-gen
 pushd pgo-gen
 PGO_GEN=$(pwd)
-cmake ${ROOT_DIR} -DStatic:BOOL=Yes -DUseLTO:BOOL=Yes -DCMAKE_AR=${CMAKE_AR} -DCMAKE_RANLIB=${CMAKE_RANLIB} -DArchNative:BOOL=yes -DCMAKE_BUILD_TYPE=Release -DPGO="-fprofile-generate=${PGO_GEN}"
+cmake ${ROOT_DIR} -DStatic:BOOL=Yes -DUseLTO:BOOL=Yes -DCMAKE_AR=${CMAKE_AR} -DCMAKE_RANLIB=${CMAKE_RANLIB} -DArchNative:BOOL=yes -DCMAKE_BUILD_TYPE=Release -DPGO="-fprofile-generate=${PGO_GEN}" -DCMAKE_PREFIX_PATH=${ROOT_DIR}/build/zlib
 make zq zindex
 popd
 
+# TODO more test cases here!
 if [[ ! -e testfile.gz ]]; then
     echo "Creating a test file"
     seq 1000000 > testfile
@@ -43,6 +44,7 @@ echo "Querying test file"
 for i in $(seq 1 12345 1000000); do pgo-gen/zq testfile.gz $i $((i + 100)) $((i + 200)); done
 
 echo "Making PGO executables"
+
 mkdir -p pgo
 cd pgo
 cmake ${ROOT_DIR} -DStatic:BOOL=Yes -DUseLTO:BOOL=Yes -DCMAKE_AR=${CMAKE_AR} -DCMAKE_RANLIB=${CMAKE_RANLIB} -DArchNative:BOOL=yes -DCMAKE_BUILD_TYPE=Release -DPGO="-fprofile-use=${PGO_GEN}"
