@@ -3,6 +3,7 @@
 #include "RegExpIndexer.h"
 #include "ConsoleLog.h"
 #include "FieldIndexer.h"
+#include "IndexParser.h"
 
 #include <tclap/CmdLine.h>
 
@@ -52,6 +53,8 @@ int Main(int argc, const char *argv[]) {
     ValueArg<int> field("f", "field", "Create an index using field <num> "
                                 "(delimited by -d/--delimiter)",
                         false, 0, "num", cmd);
+    ValueArg<string> config("c", "config", "Create indexes using yaml "
+                        "config file <file>", false, "", "indexes", cmd);
     ValueArg<char> delimiter("d", "delimiter",
                              "Use <char> as the field delimiter", false, ' ',
                              "char", cmd);
@@ -93,36 +96,43 @@ int Main(int argc, const char *argv[]) {
         Index::Builder builder(log, move(in), realPath, outputFile);
         if (skipFirst.isSet())
             builder.skipFirst(skipFirst.getValue());
-        if (regex.isSet() && field.isSet()) {
-            throw std::runtime_error(
-                    "Sorry; multiple indices are not supported yet");
-        }
-        if (regex.isSet()) {
-            auto regexIndexer = new RegExpIndexer(regex.getValue(),
-                                                  capture.getValue());
-            builder.addIndexer("default", regex.getValue(), numeric.isSet(),
-                               unique.isSet(), sparse.isSet(),
-                               std::unique_ptr<LineIndexer>(regexIndexer));
-        }
-        if (field.isSet()) {
-            ostringstream name;
-            name << "Field " << field.getValue() << " delimited by '"
-            << delimiter.getValue() << "'";
-            builder.addIndexer("default", name.str(), numeric.isSet(),
-                               unique.isSet(), sparse.isSet(),
-                               std::unique_ptr<LineIndexer>(
-                            new FieldIndexer(delimiter.getValue(),
-                                             field.getValue())));
-        }
-        if (externalIndexer.isSet()) {
-            auto indexer = std::unique_ptr<LineIndexer>(
-                    new ExternalIndexer(log,
-                                        externalIndexer.getValue(),
-                                        delimiter.getValue()));
-            builder.addIndexer("default", externalIndexer.getValue(),
-                               numeric.isSet(), unique.isSet(),
-                               sparse.isSet(),
-                               std::move(indexer));
+
+        if (config.isSet()) {
+            auto indexParser = IndexParser(config.getValue());
+            indexParser.buildIndexes(&builder, log);
+        } else {
+            if (regex.isSet() && field.isSet()) {
+                throw std::runtime_error(
+                        "Sorry; multiple indices must be defined by an indexes file - see '-i' option");
+            }
+            if (regex.isSet()) {
+                std::cout << regex.getValue() << std::endl;
+                auto regexIndexer = new RegExpIndexer(regex.getValue(),
+                                                      capture.getValue());
+                builder.addIndexer("default", regex.getValue(), numeric.isSet(),
+                                   unique.isSet(), sparse.isSet(),
+                                   std::unique_ptr<LineIndexer>(regexIndexer));
+            }
+            if (field.isSet()) {
+                ostringstream name;
+                name << "Field " << field.getValue() << " delimited by '"
+                << delimiter.getValue() << "'";
+                builder.addIndexer("default", name.str(), numeric.isSet(),
+                                   unique.isSet(), sparse.isSet(),
+                                   std::unique_ptr<LineIndexer>(
+                                           new FieldIndexer(delimiter.getValue(),
+                                                            field.getValue())));
+            }
+            if (externalIndexer.isSet()) {
+                auto indexer = std::unique_ptr<LineIndexer>(
+                        new ExternalIndexer(log,
+                                            externalIndexer.getValue(),
+                                            delimiter.getValue()));
+                builder.addIndexer("default", externalIndexer.getValue(),
+                                   numeric.isSet(), unique.isSet(),
+                                   sparse.isSet(),
+                                   std::move(indexer));
+            }
         }
         if (checkpointEvery.isSet())
             builder.indexEvery(checkpointEvery.getValue());
