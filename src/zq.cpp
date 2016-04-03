@@ -89,6 +89,10 @@ int Main(int argc, const char *argv[]) {
                             false, "--", "SEPARATOR", cmd);
     ValueArg<string> indexArg("", "index-file", "Use index from <index-file> "
             "(default <file>.zindex)", false, "", "index", cmd);
+
+    ValueArg<string> queryIndexArg("i", "index", "Use specified index for searching"
+                            , false, "", "index", cmd);
+
     cmd.parse(argc, argv);
 
     ConsoleLog log(
@@ -109,6 +113,7 @@ int Main(int argc, const char *argv[]) {
                          inputFile.getValue() + ".zindex";
         auto index = Index::load(log, move(in), indexFile.c_str(),
                                  forceLoad.isSet());
+        auto queryIndex = queryIndexArg.isSet() ? queryIndexArg.getValue() : "default";
 
         uint64_t before = 0u;
         uint64_t after = 0u;
@@ -121,11 +126,12 @@ int Main(int argc, const char *argv[]) {
         PrintHandler ph(index, sink, (before || after) && !noSepArg.isSet(),
                         sepArg.getValue());
         RangeFetcher rangeFetcher(ph, before, after);
+        std::cout << queryIndex << std::endl;
         if (lineMode.isSet()) {
             for (auto &q : query.getValue())
                 rangeFetcher(toInt(q));
         } else {
-            index.queryIndexMulti("default", query.getValue(), rangeFetcher);
+            index.queryIndexMulti(queryIndex, query.getValue(), rangeFetcher);
         }
     } catch (const exception &e) {
         log.error(e.what());
