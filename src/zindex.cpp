@@ -37,8 +37,9 @@ int Main(int argc, const char *argv[]) {
     SwitchArg numeric("n", "numeric", "Assume the index is numeric", cmd);
     SwitchArg unique("u", "unique", "Assume each line's index is unique", cmd);
     SwitchArg sparse("s", "sparse", "Sparse - only save line offsets for rows"
-            " that have ids. Merges all rows that have no id to the most recent"
-            "id. Useful if your file is one id row followed by n data rows.", cmd);
+                             " that have ids. Merges all rows that have no id to the most recent"
+                             "id. Useful if your file is one id row followed by n data rows.",
+                     cmd);
     ValueArg<uint64_t> checkpointEvery(
             "", "checkpoint-every",
             "Create a compression checkpoint every <bytes>", false,
@@ -53,8 +54,8 @@ int Main(int argc, const char *argv[]) {
     ValueArg<int> field("f", "field", "Create an index using field <num> "
                                 "(delimited by -d/--delimiter)",
                         false, 0, "num", cmd);
-    ValueArg<string> config("c", "config", "Create indexes using json "
-                        "config file <file>", false, "", "indexes", cmd);
+    ValueArg<string> configFile("c", "config", "Create indexes using json "
+            "config file <file>", false, "", "indexes", cmd);
     ValueArg<char> delimiter("d", "delimiter",
                              "Use <char> as the field delimiter", false, ' ',
                              "char", cmd);
@@ -97,30 +98,36 @@ int Main(int argc, const char *argv[]) {
         if (skipFirst.isSet())
             builder.skipFirst(skipFirst.getValue());
 
-        if (config.isSet()) {
-            auto indexParser = IndexParser(config.getValue());
+        Index::IndexConfig config{ };
+        config.numeric = numeric.isSet();
+        config.unique = unique.isSet();
+        config.sparse = unique.isSet();
+        //config.indexLineOffsets = // TODO - add command line flag if desired
+
+        if (configFile.isSet()) {
+            auto indexParser = IndexParser(configFile.getValue());
             indexParser.buildIndexes(&builder, log);
         } else {
             if (regex.isSet() && field.isSet()) {
                 throw std::runtime_error(
-                        "Sorry; multiple indices must be defined by an indexes file - see '-i' option");
+                        "Sorry; multiple indices must be defined by an "
+                                "indexes file - see '-i' option");
             }
             if (regex.isSet()) {
                 auto regexIndexer = new RegExpIndexer(regex.getValue(),
                                                       capture.getValue());
-                builder.addIndexer("default", regex.getValue(), numeric.isSet(),
-                                   unique.isSet(), sparse.isSet(),
+                builder.addIndexer("default", regex.getValue(), config,
                                    std::unique_ptr<LineIndexer>(regexIndexer));
             }
             if (field.isSet()) {
                 ostringstream name;
                 name << "Field " << field.getValue() << " delimited by '"
                 << delimiter.getValue() << "'";
-                builder.addIndexer("default", name.str(), numeric.isSet(),
-                                   unique.isSet(), sparse.isSet(),
+                builder.addIndexer("default", name.str(), config,
                                    std::unique_ptr<LineIndexer>(
-                                           new FieldIndexer(delimiter.getValue(),
-                                                            field.getValue())));
+                                           new FieldIndexer(
+                                                   delimiter.getValue(),
+                                                   field.getValue())));
             }
             if (externalIndexer.isSet()) {
                 auto indexer = std::unique_ptr<LineIndexer>(
@@ -128,9 +135,7 @@ int Main(int argc, const char *argv[]) {
                                             externalIndexer.getValue(),
                                             delimiter.getValue()));
                 builder.addIndexer("default", externalIndexer.getValue(),
-                                   numeric.isSet(), unique.isSet(),
-                                   sparse.isSet(),
-                                   std::move(indexer));
+                                   config, std::move(indexer));
             }
         }
         if (checkpointEvery.isSet())

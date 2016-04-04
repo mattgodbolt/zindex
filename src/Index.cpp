@@ -618,12 +618,12 @@ INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
     }
 
     void addIndexer(const std::string &name, const std::string &creation,
-                    bool numeric, bool unique, bool sparse,
+                    Index::IndexConfig config,
                     std::unique_ptr<LineIndexer> indexer) {
-        saveAllLines_ = !sparse;
+        saveAllLines_ = !config.sparse;
         auto table = "index_" + name;
-        std::string type = numeric ? "INTEGER" : "TEXT";
-        if (unique) type += " PRIMARY KEY";
+        std::string type = config.numeric ? "INTEGER" : "TEXT";
+        if (config.unique) type += " PRIMARY KEY";
         db.exec(R"(
 CREATE TABLE )" + table + R"((
     key )" + type + R"(,
@@ -634,13 +634,17 @@ CREATE TABLE )" + table + R"((
                 .reset()
                 .bindString(":name", name)
                 .bindString(":creationString", creation)
-                .bindInt64(":isNumeric", numeric ? 1 : 0)
+                .bindInt64(":isNumeric", config.numeric ? 1 : 0)
                 .step();
 
         auto inserter = db.prepare(R"(
 INSERT INTO )" + table + R"( VALUES(:key, :line, :offset)
 )");
-        if (numeric) {
+        if (config.indexLineOffsets) {
+            db.exec(R"(CREATE INDEX )" + table + R"(_line_offset_index ON )"
+                    + table + R"((line))");
+        }
+        if (config.numeric) {
             indexers.emplace(name, std::unique_ptr<IndexHandler>(
                     new NumericHandler(log, std::move(indexer),
                                        std::move(inserter))));
@@ -673,11 +677,9 @@ Index::Builder::Builder(Log &log, File &&from, const std::string &fromPath,
 Index::Builder &Index::Builder::addIndexer(
         const std::string &name,
         const std::string &creation,
-        bool numeric,
-        bool unique,
-        bool sparse,
+        IndexConfig config,
         std::unique_ptr<LineIndexer> indexer) {
-    impl_->addIndexer(name, creation, numeric, unique, sparse, std::move(indexer));
+    impl_->addIndexer(name, creation, config, std::move(indexer));
     return *this;
 }
 
