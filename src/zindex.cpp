@@ -106,7 +106,6 @@ int Main(int argc, const char *argv[]) {
                         "Sorry; multiple indices must be defined by an indexes file - see '-i' option");
             }
             if (regex.isSet()) {
-                std::cout << regex.getValue() << std::endl;
                 auto regexIndexer = new RegExpIndexer(regex.getValue(),
                                                       capture.getValue());
                 builder.addIndexer("default", regex.getValue(), numeric.isSet(),
