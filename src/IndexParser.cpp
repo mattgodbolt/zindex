@@ -34,18 +34,20 @@ void IndexParser::parseIndex(cJSON *index, Index::Builder *builder, ConsoleLog& 
         indexName = cJSON_GetObjectItem(index, "name")->valuestring;
     }
     std::string type = cJSON_GetObjectItem(index, "type")->valuestring;
-    bool numeric = cJSON_GetObjectItem(index, "numeric") && strcmp("true", cJSON_GetObjectItem(index, "numeric")->string);
-    bool unique = cJSON_GetObjectItem(index, "unique") && strcmp("true", cJSON_GetObjectItem(index, "unique")->string);
-    bool sparse = cJSON_GetObjectItem(index, "sparse") && strcmp("true", cJSON_GetObjectItem(index, "sparse")->string);
+    Index::IndexConfig config{};
+    config.numeric = cJSON_GetObjectItem(index, "numeric") && strcmp("true", cJSON_GetObjectItem(index, "numeric")->string);
+    config.unique = cJSON_GetObjectItem(index, "unique") && strcmp("true", cJSON_GetObjectItem(index, "unique")->string);
+    config.sparse = cJSON_GetObjectItem(index, "sparse") && strcmp("true", cJSON_GetObjectItem(index, "sparse")->string);
+    config.indexLineOffsets = cJSON_GetObjectItem(index, "indexLineOffsets") && strcmp("true", cJSON_GetObjectItem(index, "indexLineOffsets")->string);
 
     if (type == "regex") {
         std::string regex = cJSON_GetObjectItem(index, "regex")->valuestring;
         if (cJSON_HasObjectItem(index, "capture")) {
             uint capture = cJSON_GetObjectItem(index, "capture")->valueint;
-            builder->addIndexer(indexName, regex, numeric, unique, sparse,
+            builder->addIndexer(indexName, regex, config,
                                std::unique_ptr<LineIndexer>(new RegExpIndexer(regex, capture)));
         } else {
-            builder->addIndexer(indexName, regex, numeric, unique, sparse,
+            builder->addIndexer(indexName, regex, config,
                                std::unique_ptr<LineIndexer>(new RegExpIndexer(regex)));
         }
     }
@@ -55,14 +57,14 @@ void IndexParser::parseIndex(cJSON *index, Index::Builder *builder, ConsoleLog& 
         std::ostringstream name;
         name << "Field " << fieldNum << " delimited by '"
             << delimiter << "'";
-        builder->addIndexer(indexName, name.str(), numeric, unique, sparse,
+        builder->addIndexer(indexName, name.str(), config,
                            std::unique_ptr<LineIndexer>(new FieldIndexer(delimiter, fieldNum)));
     }
     if (type == "pipe") {
         std::string pipeCommand = cJSON_GetObjectItem(index, "command")->valuestring;
         char delimiter = cJSON_GetObjectItem(index, "delimiter")->valuestring[0];
 
-        builder->addIndexer(indexName, pipeCommand, numeric, unique, sparse, std::move(
+        builder->addIndexer(indexName, pipeCommand, config, std::move(
                         std::unique_ptr<LineIndexer>(new ExternalIndexer(log,
                                             pipeCommand, delimiter))));
     }

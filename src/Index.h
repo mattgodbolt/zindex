@@ -32,6 +32,21 @@ public:
     Index(Index &&other);
     ~Index();
 
+    struct IndexConfig {
+        bool numeric;
+        bool unique;
+        bool sparse;
+        bool indexLineOffsets;
+
+        IndexConfig() :
+                numeric{false}, unique{false}, sparse{false}, indexLineOffsets{false} {};
+        
+        IndexConfig withNumeric(bool b) { numeric = b; return *this; };
+        IndexConfig withUnique(bool b) { unique = b; return *this; };
+        IndexConfig withSparse(bool b) { sparse = b; return *this; };
+        IndexConfig withIndexLineOffsets(bool b) { indexLineOffsets = b; return *this; };
+    };
+
     // Retrieve a single line by line number, calling the supplied LineSink with
     // the line, if found. Returns true if a link was found, false otherwise.
     bool getLine(uint64_t line, LineSink &sink);
@@ -116,9 +131,7 @@ public:
         // more efficient.
         Builder &addIndexer(const std::string &name,
                             const std::string &creation,
-                            bool numeric,
-                            bool unique,
-                            bool sparse,
+                            IndexConfig config,
                             std::unique_ptr<LineIndexer> indexer);
 
         // Build the index. Once this method's been called, the Builder should
