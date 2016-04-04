@@ -33,15 +33,18 @@ public:
     ~Index();
 
     struct IndexConfig {
-        bool numeric = false;
-        bool unique = false;
-        bool sparse = false;
-        bool indexLineOffsets = false;
-        IndexConfig(bool n, bool u, bool s, bool i) :
-                numeric{n}, unique{u}, sparse{s}, indexLineOffsets{i} {};
+        bool numeric;
+        bool unique;
+        bool sparse;
+        bool indexLineOffsets;
 
         IndexConfig() :
                 numeric{false}, unique{false}, sparse{false}, indexLineOffsets{false} {};
+        
+        IndexConfig withNumeric(bool b) { numeric = b; return *this; };
+        IndexConfig withUnique(bool b) { unique = b; return *this; };
+        IndexConfig withSparse(bool b) { sparse = b; return *this; };
+        IndexConfig withIndexLineOffsets(bool b) { indexLineOffsets = b; return *this; };
     };
 
     // Retrieve a single line by line number, calling the supplied LineSink with
