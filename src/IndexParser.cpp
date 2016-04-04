@@ -4,6 +4,7 @@
 #include "ExternalIndexer.h"
 #include <iostream>
 #include <fstream>
+#include <stdexcept>
 
 void IndexParser::buildIndexes(Index::Builder *builder, ConsoleLog& log) {
     std::ifstream in(fileName_, std::ifstream::in);

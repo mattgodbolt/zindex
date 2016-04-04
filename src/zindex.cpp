@@ -53,7 +53,7 @@ int Main(int argc, const char *argv[]) {
     ValueArg<int> field("f", "field", "Create an index using field <num> "
                                 "(delimited by -d/--delimiter)",
                         false, 0, "num", cmd);
-    ValueArg<string> config("c", "config", "Create indexes using yaml "
+    ValueArg<string> config("c", "config", "Create indexes using json "
                         "config file <file>", false, "", "indexes", cmd);
     ValueArg<char> delimiter("d", "delimiter",
                              "Use <char> as the field delimiter", false, ' ',
