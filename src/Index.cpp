@@ -313,6 +313,17 @@ WHERE key = :query
         }
     }
 
+    size_t customQuery(const std::string &customQuery, LineFunction lineFunc) {
+        auto stmt = db_.prepare(customQuery);
+        size_t matches = 0;
+        for (; ;) {
+            if (stmt.step()) return matches;
+            lineFunc(stmt.columnInt64(0));
+            ++matches;
+        }
+        return matches;
+    }
+
     size_t indexSize(const std::string &index) const {
         auto stmt = db_.prepare("SELECT COUNT(*) FROM index_" + index);
         if (stmt.step()) return 0;
@@ -719,6 +730,10 @@ size_t Index::queryIndexMulti(const std::string &index,
     for (auto query : queries)
         result += impl_->queryIndex(index, query, lineFunction);
     return result;
+}
+
+size_t Index::queryCustom(const std::string &customQuery, LineFunction lineFunc) {
+    return impl_->customQuery(customQuery, lineFunc);
 }
 
 Index::Builder::~Builder() {

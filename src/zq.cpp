@@ -93,6 +93,14 @@ int Main(int argc, const char *argv[]) {
     ValueArg<string> queryIndexArg("i", "index", "Use specified index for searching"
                             , false, "", "index", cmd);
 
+    ValueArg<string> rawSqlQueryArg("", "raw", "Expert Mode - Since zindex is "
+            "a sqlite3 database under the covers, this flag lets you run a custom "
+            "query for use cases not supported by command line args."
+            " example: (--raw \"select a.line from index_default a, "
+            "index_secondary b where a.line == b.line and a.key == '2' "
+            "and b.key == 'KEY_2';\")"
+                            , false, "", "raw", cmd);
+
     cmd.parse(argc, argv);
 
     ConsoleLog log(
@@ -126,10 +134,11 @@ int Main(int argc, const char *argv[]) {
         PrintHandler ph(index, sink, (before || after) && !noSepArg.isSet(),
                         sepArg.getValue());
         RangeFetcher rangeFetcher(ph, before, after);
-        std::cout << queryIndex << std::endl;
         if (lineMode.isSet()) {
             for (auto &q : query.getValue())
                 rangeFetcher(toInt(q));
+        } else if (rawSqlQueryArg.isSet()) {
+            index.queryCustom(rawSqlQueryArg.getValue(), rangeFetcher);
         } else {
             index.queryIndexMulti(queryIndex, query.getValue(), rangeFetcher);
         }

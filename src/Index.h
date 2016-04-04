@@ -76,6 +76,11 @@ public:
         return queryIndexMulti(index, queries, sinkFetch(sink));
     }
 
+    // Query all indexes with the supplied query. Each
+    // matching line number is passed to the supplied lineFunction. Returns
+    // the total number of index matches
+    size_t queryCustom(const std::string &customQuery, LineFunction lineFunc);
+
     // Return the number of entries in a particular sub-index.
     size_t indexSize(const std::string &index) const;
 
