@@ -4,7 +4,7 @@
 #include "Index.h"
 #include "ConsoleLog.h"
 #include <string>
-#include "cJSON.h"
+#include "cJSON/cJSON.h"
 
 // Parses multiple indexes from a json configuration.
 class IndexParser {

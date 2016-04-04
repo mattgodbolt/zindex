@@ -72,8 +72,8 @@ set(SOURCE_FILES
     src/LineIndexer.h
     src/IndexSink.h
     src/Log.h
-    src/cJSON.h
-    src/cJSON.c
+    ext/cJSON/cJSON.h
+    ext/cJSON/cJSON.c
     src/ConsoleLog.h
     src/ConsoleLog.cpp
     src/StringView.cpp
