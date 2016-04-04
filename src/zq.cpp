@@ -89,6 +89,18 @@ int Main(int argc, const char *argv[]) {
                             false, "--", "SEPARATOR", cmd);
     ValueArg<string> indexArg("", "index-file", "Use index from <index-file> "
             "(default <file>.zindex)", false, "", "index", cmd);
+
+    ValueArg<string> queryIndexArg("i", "index", "Use specified index for searching"
+                            , false, "", "index", cmd);
+
+    ValueArg<string> rawSqlQueryArg("", "raw", "Expert Mode - Since zindex is "
+            "a sqlite3 database under the covers, this flag lets you run a custom "
+            "query for use cases not supported by command line args."
+            " example: (--raw \"select a.line from index_default a, "
+            "index_secondary b where a.line == b.line and a.key == '2' "
+            "and b.key == 'KEY_2';\")"
+                            , false, "", "raw", cmd);
+
     cmd.parse(argc, argv);
 
     ConsoleLog log(
@@ -109,6 +121,7 @@ int Main(int argc, const char *argv[]) {
                          inputFile.getValue() + ".zindex";
         auto index = Index::load(log, move(in), indexFile.c_str(),
                                  forceLoad.isSet());
+        auto queryIndex = queryIndexArg.isSet() ? queryIndexArg.getValue() : "default";
 
         uint64_t before = 0u;
         uint64_t after = 0u;
@@ -124,8 +137,10 @@ int Main(int argc, const char *argv[]) {
         if (lineMode.isSet()) {
             for (auto &q : query.getValue())
                 rangeFetcher(toInt(q));
+        } else if (rawSqlQueryArg.isSet()) {
+            index.queryCustom(rawSqlQueryArg.getValue(), rangeFetcher);
         } else {
-            index.queryIndexMulti("default", query.getValue(), rangeFetcher);
+            index.queryIndexMulti(queryIndex, query.getValue(), rangeFetcher);
         }
     } catch (const exception &e) {
         log.error(e.what());

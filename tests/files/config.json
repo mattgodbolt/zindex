@@ -1,0 +1,17 @@
+{ 
+    "indexes" : [
+    { 
+        "type" : "regex",
+        "regex" : "(New|Update)\\|([^-]+)",
+        "capture" : 2,
+        "sparse" : true
+    },
+    { 
+        "name" : "timestamp",
+        "type" : "regex",
+        "regex" : "^([^\\|]+)\\|.*(New|Update)",
+        "sparse" : true,
+        "capture" : 1
+    }
+    ]
+}

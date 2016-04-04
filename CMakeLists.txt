@@ -57,6 +57,8 @@ set(SOURCE_FILES
     src/File.h
     src/Index.cpp
     src/Index.h
+    src/IndexParser.cpp
+    src/IndexParser.h
     src/LineFinder.cpp
     src/LineFinder.h
     src/LineSink.h
@@ -70,6 +72,8 @@ set(SOURCE_FILES
     src/LineIndexer.h
     src/IndexSink.h
     src/Log.h
+    ext/cJSON/cJSON.h
+    ext/cJSON/cJSON.c
     src/ConsoleLog.h
     src/ConsoleLog.cpp
     src/StringView.cpp
