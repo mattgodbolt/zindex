@@ -641,8 +641,12 @@ CREATE TABLE )" + table + R"((
 INSERT INTO )" + table + R"( VALUES(:key, :line, :offset)
 )");
         if (config.indexLineOffsets) {
-            db.exec(R"(CREATE INDEX )" + table + R"(_line_offset_index ON )"
+            db.exec(R"(CREATE INDEX )" + table + R"(_line_index ON )"
                     + table + R"((line))");
+        }
+        if (!config.unique) {
+            db.exec(R"(CREATE INDEX )" + table + R"(_key_index ON )"
+                    + table + R"((key))");
         }
         if (config.numeric) {
             indexers.emplace(name, std::unique_ptr<IndexHandler>(
