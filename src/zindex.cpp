@@ -101,7 +101,7 @@ int Main(int argc, const char *argv[]) {
         Index::IndexConfig config{ };
         config.numeric = numeric.isSet();
         config.unique = unique.isSet();
-        config.sparse = unique.isSet();
+        config.sparse = sparse.isSet();
         //config.indexLineOffsets = // TODO - add command line flag if desired
 
         if (configFile.isSet()) {
