@@ -50,8 +50,7 @@ void IndexParser::parseIndex(cJSON *index, Index::Builder *builder, ConsoleLog& 
             builder->addIndexer(indexName, regex, config,
                                std::unique_ptr<LineIndexer>(new RegExpIndexer(regex)));
         }
-    }
-    if (type == "field") {
+    } else if (type == "field") {
         char delimiter = cJSON_GetObjectItem(index, "delimiter")->valuestring[0];
         uint fieldNum = cJSON_GetObjectItem(index, "fieldNum")->valueint;
         std::ostringstream name;
@@ -59,13 +58,14 @@ void IndexParser::parseIndex(cJSON *index, Index::Builder *builder, ConsoleLog& 
             << delimiter << "'";
         builder->addIndexer(indexName, name.str(), config,
                            std::unique_ptr<LineIndexer>(new FieldIndexer(delimiter, fieldNum)));
-    }
-    if (type == "pipe") {
+    } else if (type == "pipe") {
         std::string pipeCommand = cJSON_GetObjectItem(index, "command")->valuestring;
         char delimiter = cJSON_GetObjectItem(index, "delimiter")->valuestring[0];
 
         builder->addIndexer(indexName, pipeCommand, config, std::move(
                         std::unique_ptr<LineIndexer>(new ExternalIndexer(log,
                                             pipeCommand, delimiter))));
+    } else {
+        throw std::runtime_error("unknown index " + type);
     }
 }
