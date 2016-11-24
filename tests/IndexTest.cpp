@@ -182,7 +182,7 @@ TEST_CASE("indexes files", "[Index]") {
         Index::Builder builder(log, File(fopen(testFile.c_str(), "rb")),
                                testFile, testFile + ".zindex");
         builder.skipFirst(2);
-        unique_ptr<LineIndexer> indexer(new FieldIndexer(' ', 2));
+        unique_ptr<LineIndexer> indexer(new FieldIndexer(" ", 2));
         builder.addIndexer("default", "blah", Index::IndexConfig().withNumeric(true), move(indexer))
                 .indexEvery(256 * 1024)
                 .build();

@@ -56,9 +56,9 @@ int Main(int argc, const char *argv[]) {
                         false, 0, "num", cmd);
     ValueArg<string> configFile("c", "config", "Create indexes using json "
             "config file <file>", false, "", "indexes", cmd);
-    ValueArg<char> delimiter("d", "delimiter",
-                             "Use <char> as the field delimiter", false, ' ',
-                             "char", cmd);
+    ValueArg<string> delimiter("d", "delimiter",
+                             "Use <delim> as the field delimiter", false, " ",
+                             "delim", cmd);
     ValueArg<string> externalIndexer(
             "p", "pipe",
             "Create indices by piping output through <CMD> which should output "

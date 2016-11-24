@@ -6,11 +6,11 @@
 
 // A LineIndexer that indexes based on a separator and field number.
 class FieldIndexer : public LineIndexer {
-    char separator_;
+    std::string separator_;
     int field_;
 public:
-    FieldIndexer(char separator, int field)
-            : separator_(separator),
+    FieldIndexer(std::string separator, int field)
+            : separator_(move(separator)),
               field_(field) { }
 
     void index(IndexSink &sink, StringView line) override;

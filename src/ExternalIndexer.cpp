@@ -54,16 +54,16 @@ void ExternalIndexer::index(IndexSink &sink, StringView line) {
     auto ptr = &buf[0];
     auto end = &buf[buf.size() - 1];
     while (ptr < end) {
-        auto nextSep = static_cast<char *>(memchr(ptr, separator_, end - ptr));
+        auto nextSep = static_cast<char *>(memmem(ptr, end - ptr, separator_.c_str(), separator_.size()));
         if (!nextSep) nextSep = end;
         auto length = nextSep - ptr;
         if (length) sink.add(StringView(ptr, length), 0); // TODO: offset
-        ptr = nextSep + 1;
+        ptr = nextSep + separator_.size();
     }
 }
 
 ExternalIndexer::ExternalIndexer(Log &log, const std::string &command,
-                                 char separator)
+                                 const std::string &separator)
         : log_(log), childPid_(0), separator_(separator) {
     auto forkResult = fork();
     if (forkResult == -1) {

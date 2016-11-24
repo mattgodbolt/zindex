@@ -14,10 +14,11 @@ class ExternalIndexer : public LineIndexer {
     pid_t childPid_;
     Pipe sendPipe_;
     Pipe receivePipe_;
-    char separator_;
+    std::string separator_;
 
 public:
-    ExternalIndexer(Log &log, const std::string &command, char separator);
+    ExternalIndexer(Log &log, const std::string &command,
+                    const std::string &separator);
     ~ExternalIndexer();
 
     ExternalIndexer(const ExternalIndexer &) = delete;
