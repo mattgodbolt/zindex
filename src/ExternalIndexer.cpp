@@ -86,7 +86,7 @@ ExternalIndexer::~ExternalIndexer() {
         auto result = kill(childPid_, SIGTERM);
         if (result == -1) {
             log_.error("Unable to send kill: ", errno);
-            throw std::runtime_error("Unable to kill child");
+            std::terminate();
         }
         int status = 0;
         log_.debug("Waiting on child");
