@@ -44,6 +44,8 @@ with multiple matches separated by spaces (which is the default separator).
 $ zindex file.gz --pipe "jq --raw-output --unbuffered '[.actions[].orderId.id] | join(\" \")'"
 ```
 
+Multiple indices, and configuration of the index creation by JSON configuration file are supported, see below.
+
 ## Querying the index
 
 The `zq` program is used to query an index.  It's given the name of the compressed file and a list of queries. For example:
@@ -77,6 +79,30 @@ $ cd path/to/build/directory
 $ cmake path/to/zindex/checkout/dir -DStatic:BOOL=On -DCMAKE_BUILD_TYPE=Release
 $ make
 ```
+
+## Multiple indices
+
+To support more than one index, or for easier configuration than all the command-line flags that might be
+needed, there is a JSON configuration format. Pass the `--config <yourconfigfile>.json` option and put something like this in the configuration file:
+
+    { 
+        "indexes": [
+            {
+                "type": "field",
+                "delimiter": "\t",
+                "fieldNum": 1
+            },
+            {
+                "name": "secondary",
+                "type": "field",
+                "delimiter": "\t",
+                "fieldNum": 2
+            }
+        ]
+    }
+
+This creates two indices, one on the first field and one on the second field, as delimited by tabs. One can
+then specify which index to query with the `-i <index>` option of `zq`.
 
 ### Issues and feature requests
 
