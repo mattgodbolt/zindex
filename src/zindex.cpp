@@ -40,6 +40,7 @@ int Main(int argc, const char *argv[]) {
                              " that have ids. Merges all rows that have no id to the most recent"
                              "id. Useful if your file is one id row followed by n data rows.",
                      cmd);
+    SwitchArg warnings("w", "warnings", "Log warnings at info level", cmd);
     ValueArg<uint64_t> checkpointEvery(
             "", "checkpoint-every",
             "Create a compression checkpoint every <bytes>", false,
@@ -79,7 +80,7 @@ int Main(int argc, const char *argv[]) {
             debug.isSet() ? Log::Severity::Debug : verbose.isSet()
                                                    ? Log::Severity::Info
                                                    : Log::Severity::Warning,
-            forceColour.isSet() || forceColor.isSet());
+            forceColour.isSet() || forceColor.isSet(), warnings.isSet());
 
     try {
         auto realPath = getRealPath(inputFile.getValue());
