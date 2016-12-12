@@ -71,6 +71,7 @@ int Main(int argc, const char *argv[]) {
             "inconsistent with the index", cmd);
     SwitchArg lineNum("n", "line-number",
                       "Prefix each line of output with its line number", cmd);
+    SwitchArg warnings("w", "warnings", "Log warnings at info level", cmd);
     ValueArg<uint64_t> afterArg("A", "after-context",
                                 "Print NUM lines of context after each match",
                                 false, 0, "NUM", cmd);
@@ -107,7 +108,7 @@ int Main(int argc, const char *argv[]) {
             debug.isSet() ? Log::Severity::Debug : verbose.isSet()
                                                    ? Log::Severity::Info
                                                    : Log::Severity::Warning,
-            forceColour.isSet() || forceColor.isSet());
+            forceColour.isSet() || forceColor.isSet(), warnings.isSet());
 
     try {
         auto compressedFile = inputFile.getValue();

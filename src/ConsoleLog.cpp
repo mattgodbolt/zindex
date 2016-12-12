@@ -13,13 +13,16 @@ const char *prefix(Log::Severity severity) {
 }
 }
 
-ConsoleLog::ConsoleLog(Log::Severity logLevel, bool forceColour)
+ConsoleLog::ConsoleLog(Log::Severity logLevel, bool forceColour, bool logWarningsToInfo)
         : Log(logLevel) {
     ansiColour_ = forceColour || ::isatty(STDOUT_FILENO);
+    logWarningsToInfo_ = logWarningsToInfo;
 }
 
 void ConsoleLog::log(Log::Severity severity, const std::string &message) {
-    auto &out = severity >= Log::Severity::Warning ? std::cerr : std::cout;
+    auto logToError = severity > Log::Severity::Warning || (severity == Log::Severity::Warning && !logWarningsToInfo_);
+    auto &out = logToError ? std::cerr : std::cout;
+
     bool needReset = ansiColour_;
     if (ansiColour_) {
         switch (severity) {
@@ -37,7 +40,7 @@ void ConsoleLog::log(Log::Severity severity, const std::string &message) {
                 break;
         }
     }
-    out << prefix(severity) << message;
+    out << prefix(severity == Log::Severity::Warning && logWarningsToInfo_? Log::Severity::Info : severity) << message;
     if (needReset) {
         out << "\x1b[0;m";
     }
