@@ -144,6 +144,7 @@ int Main(int argc, const char *argv[]) {
         builder.build();
     } catch (const exception &e) {
         log.error(e.what());
+        return 1;
     }
     return 0;
 }
