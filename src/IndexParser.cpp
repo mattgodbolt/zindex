@@ -40,6 +40,7 @@ void IndexParser::parseIndex(cJSON *index, Index::Builder *builder, ConsoleLog& 
     config.sparse = cJSON_GetObjectItem(index, "sparse") && strcmp("true", cJSON_GetObjectItem(index, "sparse")->string);
     config.indexLineOffsets = cJSON_GetObjectItem(index, "indexLineOffsets") && strcmp("true", cJSON_GetObjectItem(index, "indexLineOffsets")->string);
 
+    // TODO: if anything is missing here we segfault
     if (type == "regex") {
         std::string regex = cJSON_GetObjectItem(index, "regex")->valuestring;
         if (cJSON_HasObjectItem(index, "capture")) {
