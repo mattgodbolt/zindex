@@ -57,9 +57,12 @@ int Main(int argc, const char *argv[]) {
                         false, 0, "num", cmd);
     ValueArg<string> configFile("c", "config", "Create indexes using json "
             "config file <file>", false, "", "indexes", cmd);
-    ValueArg<string> delimiter("d", "delimiter",
-                             "Use <delim> as the field delimiter", false, " ",
-                             "delim", cmd);
+    ValueArg<string> delimiterArg(
+            "d", "delimiter", "Use <delim> as the field delimiter", false, " ",
+            "delim", cmd);
+    SwitchArg tabDelimiterArg(
+            "", "tab-delimiter", "Use a tab character as the field delimiter",
+            cmd);
     ValueArg<string> externalIndexer(
             "p", "pipe",
             "Create indices by piping output through <CMD> which should output "
@@ -99,11 +102,19 @@ int Main(int argc, const char *argv[]) {
         if (skipFirst.isSet())
             builder.skipFirst(skipFirst.getValue());
 
-        Index::IndexConfig config{ };
+        Index::IndexConfig config{};
         config.numeric = numeric.isSet();
         config.unique = unique.isSet();
         config.sparse = sparse.isSet();
         //config.indexLineOffsets = // TODO - add command line flag if desired
+
+        auto delimiter = delimiterArg.getValue();
+        if (tabDelimiterArg.isSet() && delimiterArg.isSet()) {
+            log.error("Cannot set both --delimiter and --tab-delimiter");
+            return 1;
+        }
+        if (tabDelimiterArg.isSet())
+            delimiter = "\t";
 
         if (configFile.isSet()) {
             auto indexParser = IndexParser(configFile.getValue());
@@ -123,18 +134,18 @@ int Main(int argc, const char *argv[]) {
             if (field.isSet()) {
                 ostringstream name;
                 name << "Field " << field.getValue() << " delimited by '"
-                << delimiter.getValue() << "'";
+                     << delimiter << "'";
                 builder.addIndexer("default", name.str(), config,
                                    std::unique_ptr<LineIndexer>(
                                            new FieldIndexer(
-                                                   delimiter.getValue(),
+                                                   delimiter,
                                                    field.getValue())));
             }
             if (externalIndexer.isSet()) {
                 auto indexer = std::unique_ptr<LineIndexer>(
                         new ExternalIndexer(log,
                                             externalIndexer.getValue(),
-                                            delimiter.getValue()));
+                                            delimiter));
                 builder.addIndexer("default", externalIndexer.getValue(),
                                    config, std::move(indexer));
             }
