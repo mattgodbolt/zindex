@@ -1,4 +1,5 @@
 #include <cstring>
+#include <stdexcept>
 #include "RegExp.h"
 
 #include "catch.hpp"
