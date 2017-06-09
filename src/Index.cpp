@@ -39,7 +39,7 @@ void seek(File &f, uint64_t pos) {
 struct ZlibError : std::runtime_error {
     ZlibError(int result) :
             std::runtime_error(
-                    std::string("Error from zlib : ") + zError(result)) { }
+                    std::string("Error from zlib : ") + zError(result)) {}
 };
 
 void X(int zlibErr) {
@@ -51,7 +51,7 @@ struct Progress {
     Log &log;
     static constexpr auto LogProgressEverySecs = 20u;
 
-    Progress(Log &log) : log(log) { }
+    Progress(Log &log) : log(log) {}
 
     template<typename Printer>
     void update(size_t progress, size_t of) {
@@ -98,6 +98,10 @@ struct ZStream {
         X(inflateInit2(&stream, (int)type));
     }
 
+    void reset() {
+        X(inflateReset(&stream));
+    }
+
     ~ZStream() {
         (void)inflateEnd(&stream);
     }
@@ -114,9 +118,9 @@ struct IndexHandler : IndexSink {
     bool indexed = false;
 
     IndexHandler(Log &log, std::unique_ptr<LineIndexer> indexer) :
-            log(log), indexer(std::move(indexer)), currentLine(0) { }
+            log(log), indexer(std::move(indexer)), currentLine(0) {}
 
-    virtual ~IndexHandler() { }
+    virtual ~IndexHandler() {}
 
     bool onLine(uint64_t lineNumber, const char *line, size_t length) {
         try {
@@ -141,7 +145,7 @@ struct AlphaHandler : IndexHandler {
     AlphaHandler(Log &log, std::unique_ptr<LineIndexer> indexer,
                  Sqlite::Statement &&insert)
             : IndexHandler(log, std::move(indexer)),
-              insert(std::move(insert)) { }
+              insert(std::move(insert)) {}
 
     void add(StringView key, size_t offset) override {
         indexed = true;
@@ -161,7 +165,7 @@ struct NumericHandler : IndexHandler {
     NumericHandler(Log &log, std::unique_ptr<LineIndexer> indexer,
                    Sqlite::Statement &&insert)
             : IndexHandler(log, std::move(indexer)),
-              insert(std::move(insert)) { }
+              insert(std::move(insert)) {}
 
     void add(StringView key, size_t offset) override {
         indexed = true;
@@ -204,6 +208,7 @@ struct CachedContext {
     size_t blockSize_;
     uint8_t input_[ChunkSize];
     ZStream zs_;
+
     explicit CachedContext(size_t uncompressedOffset, size_t blockSize)
             : uncompressedOffset_(uncompressedOffset),
               blockSize_(blockSize),
@@ -238,7 +243,7 @@ AND line = :line
 LIMIT 1)")) {
         try {
             auto queryMeta = db_.prepare("SELECT key, value FROM Metadata");
-            for (; ;) {
+            for (;;) {
                 if (queryMeta.step()) break;
                 auto key = queryMeta.columnString(0);
                 auto value = queryMeta.columnString(1);
@@ -306,7 +311,7 @@ WHERE key = :query
 )");
         stmt.bindString(":query", query);
         size_t matches = 0;
-        for (; ;) {
+        for (;;) {
             if (stmt.step()) return matches;
             lineFunc(stmt.columnInt64(0));
             ++matches;
@@ -316,7 +321,7 @@ WHERE key = :query
     size_t customQuery(const std::string &customQuery, LineFunction lineFunc) {
         auto stmt = db_.prepare(customQuery);
         size_t matches = 0;
-        for (; ;) {
+        for (;;) {
             if (stmt.step()) return matches;
             lineFunc(stmt.columnInt64(0));
             ++matches;
@@ -405,7 +410,16 @@ WHERE key = :query
                     throw ZlibError(ret);
                 auto numUncompressed = availBefore - zs.stream.avail_out;
                 context->uncompressedOffset_ += numUncompressed;
-                if (ret == Z_STREAM_END) break;
+                if (ret == Z_STREAM_END) {
+                    // The end of the stream; but is it the end of the file?
+                    if (zs.stream.avail_in == 0 && feof(compressed_.get()))
+                        break; // yes: we're done
+                    // Else, we're going to restart the decompressor: gzip
+                    // allows for multiple gzip files to be concatenated
+                    // together and says they should be treated as a single
+                    // file.
+                    zs.reset();
+                }
             } while (zs.stream.avail_out);
         } while (skipping);
         // Save the context for next time.
@@ -415,13 +429,13 @@ WHERE key = :query
     }
 };
 
-Index::Index() { }
+Index::Index() {}
 
-Index::~Index() { }
+Index::~Index() {}
 
-Index::Index(Index &&other) : impl_(std::move(other.impl_)) { }
+Index::Index(Index &&other) : impl_(std::move(other.impl_)) {}
 
-Index::Index(std::unique_ptr<Impl> &&imp) : impl_(std::move(imp)) { }
+Index::Index(std::unique_ptr<Impl> &&imp) : impl_(std::move(imp)) {}
 
 struct Index::Builder::Impl : LineSink {
     Log &log;
@@ -440,7 +454,7 @@ struct Index::Builder::Impl : LineSink {
          const std::string &indexFilename)
             : log(log), from(std::move(from)), fromPath(fromPath),
               indexFilename(indexFilename), skipFirst(0),
-              db(log), addIndexSql(log), addMetaSql(log) { }
+              db(log), addIndexSql(log), addMetaSql(log) {}
 
     void init() {
         if (unlink(indexFilename.c_str()) == 0) {
@@ -514,6 +528,8 @@ INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
         ZStream zs(ZStream::Type::ZlibOrGzip);
         uint8_t input[ChunkSize];
         uint8_t window[WindowSize];
+        auto clearWindow = [&] { /*memset(window, 0, WindowSize); */};
+        clearWindow();
 
         int ret = 0;
         Progress progress(log);
@@ -521,16 +537,19 @@ INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
         uint64_t totalOut = 0;
         uint64_t last = 0;
         bool first = true;
+        bool emitInitialAccessPoint = true;
         LineFinder finder(*this);
 
         log.info("Indexing...");
         do {
-            zs.stream.avail_in = fread(input, 1, ChunkSize, from.get());
-            if (ferror(from.get()))
-                throw ZlibError(Z_ERRNO);
-            if (zs.stream.avail_in == 0)
-                throw ZlibError(Z_DATA_ERROR);
-            zs.stream.next_in = input;
+            if (zs.stream.avail_in == 0) {
+                zs.stream.avail_in = fread(input, 1, ChunkSize, from.get());
+                if (ferror(from.get()))
+                    throw ZlibError(Z_ERRNO);
+                if (zs.stream.avail_in == 0)
+                    throw ZlibError(Z_DATA_ERROR);
+                zs.stream.next_in = input;
+            }
             do {
                 if (zs.stream.avail_out == 0) {
                     zs.stream.avail_out = WindowSize;
@@ -552,7 +571,8 @@ INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
                 if (ret == Z_STREAM_END)
                     break;
                 auto sinceLast = totalOut - last;
-                bool needsIndex = sinceLast > indexEvery || totalOut == 0;
+                bool needsIndex = sinceLast > indexEvery
+                                  || emitInitialAccessPoint;
                 bool endOfBlock = zs.stream.data_type & 0x80;
                 bool lastBlockInStream = zs.stream.data_type & 0x40;
                 if (endOfBlock && !lastBlockInStream && needsIndex) {
@@ -579,6 +599,21 @@ INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
                 }
                 progress.update<PrettyBytes>(totalIn, compressedStat.st_size);
             } while (zs.stream.avail_in);
+            if (ret == Z_STREAM_END &&
+                (zs.stream.avail_in || !feof(from.get()))) {
+                // We hit the end of the stream, but there's still more to come.
+                // This is a set of concatenated gzip files, possibly a bgzip
+                // file. There may yet be some trailing data after this block
+                // (e.g. the gzip CRC/adler trailer), but in order to skip it,
+                // and the header of the next gzip block, we force an access
+                // point to be created here. That way the decoder doesn't need
+                // to have to know how to skip it at the end of each gzip block,
+                // and it can use RAW mode in all cases.
+                ret = 0;
+                zs.reset();
+                emitInitialAccessPoint = true;
+                clearWindow();
+            }
         } while (ret != Z_STREAM_END);
 
         if (totalOut != 0) {
@@ -738,7 +773,8 @@ size_t Index::queryIndexMulti(const std::string &index,
     return result;
 }
 
-size_t Index::queryCustom(const std::string &customQuery, LineFunction lineFunc) {
+size_t
+Index::queryCustom(const std::string &customQuery, LineFunction lineFunc) {
     return impl_->customQuery(customQuery, lineFunc);
 }
 
@@ -754,7 +790,7 @@ const Index::Metadata &Index::getMetadata() const {
 }
 
 Index::LineFunction Index::sinkFetch(LineSink &sink) {
-    return std::function<void(size_t)>([ this, &sink ](size_t line) {
+    return std::function<void(size_t)>([this, &sink](size_t line) {
         this->getLine(line, sink);
     });
 }
