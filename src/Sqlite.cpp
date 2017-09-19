@@ -43,7 +43,7 @@ Sqlite::Statement Sqlite::prepare(const std::string &sql) const {
     log_->debug("Preparing statement ", sql);
     R(sqlite3_prepare_v2(sql_, sql.c_str(), sql.size(),
                          &statement.statement_, nullptr), sql);
-    return std::move(statement);
+    return statement;
 }
 
 Sqlite::Statement::Statement(Statement &&other) {
