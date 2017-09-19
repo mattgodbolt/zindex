@@ -67,10 +67,10 @@ void IndexParser::parseIndex(cJSON *index, Index::Builder *builder,
         auto pipeCommand = getOrThrowStr(index, "command");
         auto delimiter = getOrThrowStr(index, "delimiter");
 
-        builder->addIndexer(indexName, pipeCommand, config, std::move(
-                std::unique_ptr<LineIndexer>(new ExternalIndexer(log,
-                                                                 pipeCommand,
-                                                                 delimiter))));
+        builder->addIndexer(
+                indexName, pipeCommand, config,
+                std::unique_ptr<LineIndexer>(
+                        new ExternalIndexer(log, pipeCommand, delimiter)));
     } else {
         throw std::runtime_error("unknown index " + type);
     }
