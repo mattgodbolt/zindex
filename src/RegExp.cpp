@@ -3,7 +3,7 @@
 #include "RegExp.h"
 
 RegExp::RegExp(const std::string &regex)
-        : RegExp(regex.c_str()) { }
+        : RegExp(regex.c_str()) {}
 
 RegExp::RegExp(const char *regex) {
     R(regcomp(&re_, regex, REG_EXTENDED), regex);
@@ -61,11 +61,9 @@ RegExp::RegExp(RegExp &&exp)
 }
 
 RegExp &RegExp::operator=(RegExp &&exp) {
-    if (this != &exp) {
-        release();
-        re_ = exp.re_;
-        exp.owned_ = false;
-        owned_ = true;
-    }
+    release();
+    re_ = exp.re_;
+    exp.owned_ = false;
+    owned_ = true;
     return *this;
 }
