@@ -369,15 +369,15 @@ WHERE key = :query
         auto length = q.columnInt64(4);
         constexpr auto MaxLength = 64u * 1024 * 1024;
         if (length >= MaxLength) throw std::runtime_error("Line too long!");
+        std::unique_ptr<uint8_t[]> lineBuf(new uint8_t[length]);
 
-        uint8_t lineBuf[length];
         auto numToSkip = offset - context->uncompressedOffset_;
         bool skipping = true;
         auto &zs = context->zs_;
         do {
             if (numToSkip == 0 && skipping) {
                 zs.stream.avail_out = static_cast<uInt>(length);
-                zs.stream.next_out = lineBuf;
+                zs.stream.next_out = lineBuf.get();
                 skipping = false;
             }
             if (numToSkip > WindowSize) {
@@ -410,11 +410,10 @@ WHERE key = :query
         } while (skipping);
         // Save the context for next time.
         cachedContext_ = std::move(context);
-        sink.onLine(line, offset, reinterpret_cast<const char *>(lineBuf),
+        sink.onLine(line, offset, reinterpret_cast<const char *>(lineBuf.get()),
                     length - 1);
     }
 };
-
 Index::Index() { }
 
 Index::~Index() { }
