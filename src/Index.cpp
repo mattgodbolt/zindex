@@ -595,6 +595,7 @@ INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
                             .bindInt64(":bitOffset", zs.stream.data_type & 0x7)
                             .bindBlob(":window", apWindow, size);
                     last = totalOut;
+                    emitInitialAccessPoint = false;
                 }
                 progress.update<PrettyBytes>(totalIn, compressedStat.st_size);
             } while (zs.stream.avail_in);
