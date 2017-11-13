@@ -1,4 +1,5 @@
 #include <cstring>
+#include <stdexcept>
 #include "RegExp.h"
 
 #include "catch.hpp"
@@ -51,8 +52,6 @@ TEST_CASE("multiple capture groups", "[RegExp]") {
 TEST_CASE("moves", "[RegExp]") {
     RegExp r("[a-z]+");
     RegExp::Matches matches;
-    REQUIRE(r.exec("moo", matches) == true);
-    r = std::move(r);
     REQUIRE(r.exec("moo", matches) == true);
     RegExp nR("1234");
     nR = std::move(r);

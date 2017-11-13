@@ -18,5 +18,7 @@ public:
 
 private:
     void parseIndex(cJSON *index, Index::Builder* builder, ConsoleLog& log);
-    void parse(const char *p, Index::Builder* builder, ConsoleLog& log);
+    bool getBoolean(cJSON *index, const char *field) const;
+    std::string getOrThrowStr(cJSON *index, const char *field) const;
+    unsigned getOrThrowUint(cJSON *index, const char *field) const;
 };

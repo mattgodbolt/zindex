@@ -3,4 +3,4 @@
 /build
 core
 .fig
-
+cmake-build-*
