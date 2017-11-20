@@ -78,7 +78,7 @@ void IndexParser::parseIndex(cJSON *index, Index::Builder *builder,
 
 bool IndexParser::getBoolean(cJSON *index, const char *field) const {
     return cJSON_GetObjectItem(index, field)
-           && strcmp("true", cJSON_GetObjectItem(index, field)->string);
+           && cJSON_GetObjectItem(index, field)->type == cJSON_True;
 }
 
 std::string IndexParser::getOrThrowStr(cJSON *index, const char *field) const {
