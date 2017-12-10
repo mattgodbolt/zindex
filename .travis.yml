@@ -15,7 +15,7 @@ script:
   - cmake --build . -- -j2
   - ctest -D ExperimentalBuild -j2
   - ctest -D ExperimentalTest -j2
-  - [[ "${COVERAGE}" = "On" ]] && bash <(curl -s https://codecov.io/bash)
+  - if [ "${COVERAGE}" = "On" ]; then bash <(curl -s https://codecov.io/bash); fi
     #- ctest -D ExperimentalMemCheck
 addons:
     apt:
