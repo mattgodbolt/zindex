@@ -3,49 +3,55 @@ project(zindex)
 
 if (APPLE AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -stdlib=libc++ -Wall -Werror -Wextra")
-else()
+else ()
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -pthread -Wall -Werror -Wextra")
-endif()
+endif ()
 
 if (APPLE AND CMAKE_C_COMPILER_ID MATCHES "Clang")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra")
-else()
+else ()
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -pthread -Wall -Wextra")
-endif()
+endif ()
 
 option(UseLTO "Use link-time optimization" OFF)
 option(Static "Statically link" OFF)
 option(BuildSqlShell "Build the sqlite shell" OFF)
 option(ArchNative "Target the computer being built on (march=native)" OFF)
 option(PGO "Set PGO flags" "")
+option(Coverage "Enable coverage reporting" OFF)
 
-if(PGO)
+if (Coverage)
+    add_compile_options(--coverage -O0)
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} --coverage")
+endif (Coverage)
+
+if (PGO)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${PGO}")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${PGO}")
-endif(PGO)
+endif (PGO)
 
-if(UseLTO)
+if (UseLTO)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -flto -Wno-maybe-uninitialized")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -flto -Wno-maybe-uninitialized")
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fuse-linker-plugin")
-endif(UseLTO)
+endif (UseLTO)
 
 set(COMMON_LIBS "")
-if(Static)
+if (Static)
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static -static-libgcc -static-libstdc++")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DSQLITE_OMIT_LOAD_EXTENSION=1")
     set(CMAKE_FIND_LIBRARY_SUFFIXES ".a")
     set(BUILD_SHARED_LIBRARIES OFF)
     set(CMAKE_EXE_LINK_DYNAMIC_C_FLAGS)       # remove -Wl,-Bdynamic
     set(CMAKE_EXE_LINK_DYNAMIC_CXX_FLAGS)
-else(Static)
+else (Static)
     set(COMMON_LIBS "dl")
-endif(Static)
+endif (Static)
 
-if(ArchNative)
+if (ArchNative)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=native")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -march=native")
-endif(ArchNative)
+endif (ArchNative)
 
 include(CTest)
 
@@ -54,57 +60,57 @@ include_directories(BEFORE SYSTEM ext/sqlite)
 include_directories(${ZLIB_INCLUDE_DIRS} src ext)
 
 set(SOURCE_FILES
-    src/File.h
-    src/Index.cpp
-    src/Index.h
-    src/IndexParser.cpp
-    src/IndexParser.h
-    src/LineFinder.cpp
-    src/LineFinder.h
-    src/LineSink.h
-    src/Sqlite.cpp
-    src/Sqlite.h
-    src/SqliteError.h
-    src/RegExp.h
-    src/RegExp.cpp
-    src/RegExpIndexer.cpp
-    src/RegExpIndexer.h
-    src/LineIndexer.h
-    src/IndexSink.h
-    src/Log.h
-    ext/cJSON/cJSON.h
-    ext/cJSON/cJSON.c
-    src/ConsoleLog.h
-    src/ConsoleLog.cpp
-    src/StringView.cpp
-    src/StringView.h
-    src/PrettyBytes.h
-    src/PrettyBytes.cpp
-    src/RangeFetcher.cpp
-    src/RangeFetcher.h
-    src/FieldIndexer.cpp
-    src/FieldIndexer.h
-    src/ExternalIndexer.cpp
-    src/ExternalIndexer.h
-    src/Pipe.cpp
-    src/Pipe.h
-    ext/sqlite/sqlite3.c)
+        src/File.h
+        src/Index.cpp
+        src/Index.h
+        src/IndexParser.cpp
+        src/IndexParser.h
+        src/LineFinder.cpp
+        src/LineFinder.h
+        src/LineSink.h
+        src/Sqlite.cpp
+        src/Sqlite.h
+        src/SqliteError.h
+        src/RegExp.h
+        src/RegExp.cpp
+        src/RegExpIndexer.cpp
+        src/RegExpIndexer.h
+        src/LineIndexer.h
+        src/IndexSink.h
+        src/Log.h
+        ext/cJSON/cJSON.h
+        ext/cJSON/cJSON.c
+        src/ConsoleLog.h
+        src/ConsoleLog.cpp
+        src/StringView.cpp
+        src/StringView.h
+        src/PrettyBytes.h
+        src/PrettyBytes.cpp
+        src/RangeFetcher.cpp
+        src/RangeFetcher.h
+        src/FieldIndexer.cpp
+        src/FieldIndexer.h
+        src/ExternalIndexer.cpp
+        src/ExternalIndexer.h
+        src/Pipe.cpp
+        src/Pipe.h
+        ext/sqlite/sqlite3.c)
 
 set(TEST_FILES
-    tests/catch.hpp
-    tests/LineFinderTest.cpp
-    tests/test_main.cpp
-    tests/SqliteTest.cpp
-    tests/RegExpTest.cpp
-    tests/RegExpIndexerTest.cpp
-    tests/TempDir.h
-    tests/TempDir.cpp
-    tests/PrettyBytesTest.cpp
-    tests/IndexTest.cpp
-    tests/RangeFetcherTest.cpp
-    tests/FieldIndexerTest.cpp
-    tests/ExternalIndexerTest.cpp
-    tests/LogTest.cpp)
+        tests/catch.hpp
+        tests/LineFinderTest.cpp
+        tests/test_main.cpp
+        tests/SqliteTest.cpp
+        tests/RegExpTest.cpp
+        tests/RegExpIndexerTest.cpp
+        tests/TempDir.h
+        tests/TempDir.cpp
+        tests/PrettyBytesTest.cpp
+        tests/IndexTest.cpp
+        tests/RangeFetcherTest.cpp
+        tests/FieldIndexerTest.cpp
+        tests/ExternalIndexerTest.cpp
+        tests/LogTest.cpp)
 
 add_library(libzindex ${SOURCE_FILES})
 set_target_properties(libzindex PROPERTIES OUTPUT_NAME zindex)
@@ -117,12 +123,12 @@ target_link_libraries(zq libzindex ${ZLIB_LIBRARIES} ${COMMON_LIBS})
 add_executable(unit-tests ${TEST_FILES})
 target_link_libraries(unit-tests libzindex ${ZLIB_LIBRARIES} ${COMMON_LIBS})
 
-if(BuildSqlShell)
+if (BuildSqlShell)
     add_executable(sql-shell ext/sqlite/shell.c ext/sqlite/sqlite3.c)
     target_link_libraries(sql-shell ${COMMON_LIBS})
-endif(BuildSqlShell)
+endif (BuildSqlShell)
 
 find_program(MEMORYCHECK_COMMAND valgrind)
 enable_testing()
 add_test(NAME unit-tests
-         COMMAND unit-tests)
+        COMMAND unit-tests)

@@ -4,17 +4,18 @@ compiler:
   - gcc
   - clang
 env:
-  - BUILD_TYPE=Debug
-  - BUILD_TYPE=Release
+  - BUILD_TYPE=Debug COVERAGE=On
+  - BUILD_TYPE=Release COVERAGE=Off
 install:
   - if [ "$CXX" = "g++" ]; then export CXX="g++-4.7" CC="gcc-4.7"; fi
 script:
   - mkdir build
   - cd build
-  - cmake -DCMAKE_BUILD_TYPE=${BUILD_TYPE} ..
-  - make
-  - ctest -D ExperimentalBuild
-  - ctest -D ExperimentalTest
+  - cmake -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DCoverage=${COVERAGE} ..
+  - cmake --build . -- -j2
+  - ctest -D ExperimentalBuild -j2
+  - ctest -D ExperimentalTest -j2
+  - [[ "${COVERAGE}" = "On" ]] && bash <(curl -s https://codecov.io/bash)
     #- ctest -D ExperimentalMemCheck
 addons:
     apt:
