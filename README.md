@@ -1,4 +1,5 @@
-[![Build Status](https://travis-ci.org/mattgodbolt/zindex.svg?branch=master)](https://travis-ci.org/mattgodbolt/zindex)
+[![Build Status](https://travis-ci.org/mattgodbolt/zindex.svg?branch=master)](https://travis-ci.org/mattgodbolt/zindex) [![codecov](https://codecov.io/gh/mattgodbolt/zindex/branch/master/graph/badge.svg)](https://codecov.io/gh/mattgodbolt/zindex)
+
 
 `zindex` creates and queries an index on a compressed, line-based text file in a
 time- and space-efficient way.
