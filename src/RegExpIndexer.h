@@ -9,11 +9,11 @@
 // indices to an IndexSink.
 class RegExpIndexer : public LineIndexer {
     RegExp re_;
-    uint captureGroup_;
+    unsigned int captureGroup_;
 
 public:
     explicit RegExpIndexer(const std::string &regex);
-    explicit RegExpIndexer(const std::string &regex, uint captureGroup);
+    explicit RegExpIndexer(const std::string &regex, unsigned int captureGroup);
     void index(IndexSink &sink, StringView line) override;
 
 private:
