@@ -1,5 +1,7 @@
 #include <unistd.h>
 #include <stdexcept>
+#include <string>
+#include <errno.h>
 
 #include "Pipe.h"
 
