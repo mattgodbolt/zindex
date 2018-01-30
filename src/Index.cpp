@@ -452,8 +452,8 @@ struct Index::Builder::Impl : LineSink {
     Impl(Log &log, File &&from, const std::string &fromPath,
          const std::string &indexFilename)
             : log(log), from(std::move(from)), fromPath(fromPath),
-              indexFilename(indexFilename), skipFirst(0),
-              db(log), addIndexSql(log), addMetaSql(log) {}
+              indexFilename(indexFilename), skipFirst(0), db(log),
+              addIndexSql(log), addMetaSql(log), saveAllLines_{false} {}
 
     void init() {
         if (unlink(indexFilename.c_str()) == 0) {
