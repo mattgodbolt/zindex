@@ -5,7 +5,7 @@
 // A sink to be called with each line in a file.
 class LineSink {
 public:
-    virtual ~LineSink() { }
+    virtual ~LineSink() = default;
 
     virtual bool onLine(
             size_t lineNumber,

@@ -7,6 +7,7 @@
 
 #include <iostream>
 #include <stdexcept>
+#include <utility>
 #include "RangeFetcher.h"
 
 using namespace std;
@@ -17,7 +18,7 @@ namespace {
 struct PrintSink : LineSink {
     bool printLineNum;
 
-    PrintSink(bool printLineNum) : printLineNum(printLineNum) { }
+    explicit PrintSink(bool printLineNum) : printLineNum(printLineNum) { }
 
     bool onLine(size_t l, size_t, const char *line, size_t length) override {
         if (printLineNum) cout << l << ":";
@@ -33,14 +34,15 @@ struct PrintHandler : RangeFetcher::Handler {
     const std::string sep;
 
     PrintHandler(Index &index, LineSink &sink, bool printSep,
-                 const std::string &sep)
-            : index(index), sink(sink), printSep(printSep), sep(sep) { }
+                 std::string sep)
+            : index(index), sink(sink), printSep(printSep),
+              sep(std::move(sep)) { }
 
-    virtual void onLine(uint64_t line) override {
+    void onLine(uint64_t line) override {
         index.getLine(line, sink);
     }
 
-    virtual void onSeparator() override {
+    void onSeparator() override {
         if (printSep)
             cout << sep << endl;
     }

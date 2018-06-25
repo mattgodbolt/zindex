@@ -120,7 +120,7 @@ struct IndexHandler : IndexSink {
     IndexHandler(Log &log, std::unique_ptr<LineIndexer> indexer) :
             log(log), indexer(std::move(indexer)), currentLine(0) {}
 
-    virtual ~IndexHandler() {}
+    ~IndexHandler() override = default;
 
     bool onLine(uint64_t lineNumber, const char *line, size_t length) {
         try {

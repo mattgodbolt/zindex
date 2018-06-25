@@ -7,7 +7,7 @@
 // CaptureLog.
 class Log {
 public:
-    virtual ~Log() { }
+    virtual ~Log() = default;
 
     enum class Severity {
         Debug, Info, Warning, Error

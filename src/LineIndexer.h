@@ -10,7 +10,7 @@ class IndexSink;
 // matches within it (based on whatever it indexes, e.g. a matching RegExp).
 class LineIndexer {
 public:
-    virtual ~LineIndexer() { }
+    virtual ~LineIndexer() = default;
 
     virtual void index(IndexSink &sink, StringView line) = 0;
 };

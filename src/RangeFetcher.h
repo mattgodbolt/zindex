@@ -16,7 +16,7 @@ public:
     // A handler for line ranges.
     class Handler {
     public:
-        virtual ~Handler() { }
+        virtual ~Handler() = default;
 
         // Called for each line within a group.
         virtual void onLine(uint64_t line) = 0;
