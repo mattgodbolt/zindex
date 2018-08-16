@@ -543,6 +543,9 @@ INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
         do {
             if (zs.stream.avail_in == 0) {
                 zs.stream.avail_in = fread(input, 1, ChunkSize, from.get());
+                if (emitInitialAccessPoint && zs.stream.avail_in == 0 && feof(from.get())) {
+                    break;
+                }
                 if (ferror(from.get()))
                     throw ZlibError(Z_ERRNO);
                 if (zs.stream.avail_in == 0)
