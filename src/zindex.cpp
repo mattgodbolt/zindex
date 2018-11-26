@@ -53,7 +53,7 @@ int Main(int argc, const char *argv[]) {
     ValueArg<uint64_t> skipFirst("", "skip-first", "Skip the first <num> lines",
                                  false, 0, "num", cmd);
     ValueArg<int> field("f", "field", "Create an index using field <num> "
-                                "(delimited by -d/--delimiter)",
+                                "(delimited by -d/--delimiter, 1-based)",
                         false, 0, "num", cmd);
     ValueArg<string> configFile("c", "config", "Create indexes using json "
             "config file <file>", false, "", "indexes", cmd);
