@@ -37,7 +37,7 @@ void seek(File &f, uint64_t pos) {
 }
 
 struct ZlibError : std::runtime_error {
-    ZlibError(int result) :
+    explicit ZlibError(int result) :
             std::runtime_error(
                     std::string("Error from zlib : ") + zError(result)) {}
 };
@@ -350,7 +350,8 @@ WHERE key = :query
             auto compressedOffset = static_cast<size_t>(q.columnInt64(2));
             auto uncompressedOffset = static_cast<size_t>(q.columnInt64(3));
             auto bitOffset = static_cast<int>(q.columnInt64(5));
-            log_.debug("Creating new context at offset ", compressedOffset);
+            log_.debug("Creating new context at offset ", compressedOffset, ":",
+                       bitOffset);
             context.reset(new CachedContext(uncompressedOffset, blockSize_));
             uint8_t window[WindowSize];
             uncompress(q.columnBlob(6), window, WindowSize);
@@ -418,7 +419,21 @@ WHERE key = :query
                     // allows for multiple gzip files to be concatenated
                     // together and says they should be treated as a single
                     // file.
-                    zs.reset();
+                    log_.debug("Resetting stream at EOS at offset ",
+                               context->uncompressedOffset_);
+                    // As we opened the stream in RAW mode we can't continue
+                    // decoding from here: the decoder doesn't know if there's
+                    // a trailing CRC or similar here. So we have to throw away
+                    // state at this point. We know the indexer always stops us
+                    // from crossing a divide here. We check we weren't skipping
+                    // still (which we ought not to be...) and then chuck the
+                    // whole context out.  Ideally we'd skip the (optional?)
+                    // trailer and reset the zlib state back in normal, non-raw
+                    // mode and play on.
+                    if (skipping)
+                        throw std::runtime_error(
+                                "Tried to cross a gzip stream boundary");
+                    context.reset();
                 }
             } while (zs.stream.avail_out);
         } while (skipping);
