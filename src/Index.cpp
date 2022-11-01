@@ -471,7 +471,8 @@ struct Index::Builder::Impl : LineSink {
               addIndexSql(log), addMetaSql(log), saveAllLines_{false} {}
 
     void init() {
-        if (unlink(indexFilename.c_str()) == 0) {
+        auto file = db.toFile(indexFilename);
+        if (unlink(file.c_str()) == 0) {
             log.warn("Rebuilding existing index ", indexFilename);
         }
         db.open(indexFilename, false);
