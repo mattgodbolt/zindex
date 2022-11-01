@@ -5,6 +5,7 @@
 #include "SqliteError.h"
 #include <cstring>
 #include "Log.h"
+#include "RegExp.h"
 
 Sqlite::Sqlite(Log &log)
         : log_(&log), sql_(nullptr) {
@@ -20,7 +21,7 @@ void Sqlite::open(const std::string &filename, bool readOnly) {
                readOnly ? "read-only" : "read-write", " mode");
     R(sqlite3_open_v2(filename.c_str(), &sql_,
                       readOnly ? SQLITE_OPEN_READONLY :
-                      SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nullptr));
+                      SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_URI, nullptr));
     R(sqlite3_extended_result_codes(sql_, true));
 }
 
@@ -143,4 +144,29 @@ void Sqlite::R(int result, const std::string &context) const {
 void Sqlite::Statement::R(int result) const {
     if (result != SQLITE_OK)
         throw SqliteError(sqlite3_errmsg(sqlite3_db_handle(statement_)));
+}
+
+std::string Sqlite::toFile(const std::string &uri) {
+    RegExp uriRegex("^(([^:/?#]+):)?(//([^/?#]*))?([^?#]*)");
+    RegExp::Matches matches;
+    if (!uriRegex.exec(uri, matches)) {
+        return uri;
+    }
+    auto protocol = matches[1];
+    auto result = std::string(uri.c_str() + protocol.first, protocol.second - protocol.first);
+    if (result.find("file:") != 0) {
+        throw std::runtime_error(
+                "no uri support for '" + result+ "'");
+    }
+    auto start = protocol.second;
+    if (matches.size() > 3) {
+        auto slashes = matches[3];
+        start =  (slashes.second != 0) ? slashes.second : slashes.first;
+    }
+    auto path = std::string(uri.c_str() + start);
+    auto paramsStart = path.rfind("?");
+    if (paramsStart != std::string::npos) {
+        path.resize(paramsStart);
+    }
+    return path;
 }

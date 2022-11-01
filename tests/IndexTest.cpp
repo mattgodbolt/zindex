@@ -328,6 +328,8 @@ TEST_CASE("sparsely indexes files", "[Index]") {
     }
 }
 
+
+
 TEST_CASE("metadata tests", "[Index]") {
     TempDir tempDir;
     CaptureLog log;

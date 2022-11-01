@@ -36,6 +36,7 @@ public:
 
     void open(const std::string &filename, bool readOnly);
     void close();
+    std::string toFile(const std::string &uri);
 
     class Statement {
         Log *log_;
