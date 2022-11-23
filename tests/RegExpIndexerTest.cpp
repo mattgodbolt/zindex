@@ -33,4 +33,11 @@ TEST_CASE("indexes", "[RegExpIndexer]") {
         multipleCaptureGroups.index(sink, "New|2-id|0");
         CHECK(sink.captured == vs({ "2-id" }));
     }
+
+    SECTION("multiple capture groups is used as a formt") {
+        RegExpIndexer multipleCaptureGroups("([0-9]{4})-([0-9]{2})-([0-9]{2}) ([0-9]{2}):([0-9]{2}):([0-9]{2}).([0-9]{3}))\\|([^|]+)", "{2}{3}{4}{5}{6}{7}");
+        CaptureSink sink;
+        multipleCaptureGroups.index(sink, "2017-04-09 12:16:36.630|FOX|the quick brown fox");
+        CHECK(sink.captured == vs({ "2-id" }));
+    }
 }

@@ -10,7 +10,26 @@ RegExpIndexer::RegExpIndexer(const std::string &regex)
 
 RegExpIndexer::RegExpIndexer(const std::string &regex, uint captureGroup)
         : re_(regex),
-          captureGroup_(captureGroup) { }
+          captureFormat_("{" + std::to_string(captureGroup) + "}") { }
+
+RegExpIndexer::RegExpIndexer(const std::string &regex, const std::string captureFormat)
+        : re_(regex),
+          captureFormat_(captureFormat) { 
+                RegExp r("{[0-9]+}");
+                RegExp::Matches matches;
+                char const *groupPattern = captureFormat.c_str();
+                if (r.exec(groupPattern, matches) == false) {
+                      throw std::runtime_error(
+                        "Expected at least 1 capture group match");
+                }
+                int max = 0;
+                for (size_t i = 1; i < matches.size(); i++) {                    
+                    int match = atoi(std::string(groupPattern + matches[i].first, matches[i].second - matches[i].first).c_str());
+                    max = (match > max) ? match : max;
+                }
+                captureGroup_ = max;
+          }
+
 
 void RegExpIndexer::index(IndexSink &sink, StringView line) {
     RegExp::Matches result;

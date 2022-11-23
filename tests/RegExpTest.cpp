@@ -1,13 +1,12 @@
 #include <cstring>
 #include <stdexcept>
 #include "RegExp.h"
-
 #include "catch.hpp"
 
 TEST_CASE("constructs regexes", "[RegExp]") {
     RegExp r1("");
     RegExp r2(".*");
-    RegExp r3("\"eventId\":([0-9]+)");
+    RegExp r3("\"eventId\":(New|2-id|0[0-9]+)");
 
     SECTION("throws on bad") {
         bool threw = false;
@@ -56,4 +55,20 @@ TEST_CASE("moves", "[RegExp]") {
     RegExp nR("1234");
     nR = std::move(r);
     REQUIRE(r.exec("moo", matches) == true);
+}
+
+TEST_CASE("max", "[RegExp]") {
+    RegExp r("{[0-9]+}");
+    RegExp::Matches matches;
+    char const *groupPattern = "{22}{0}{2}";
+    REQUIRE(r.exec(groupPattern, matches) == true);
+    int max = 0;
+    for (size_t i = 1; i < matches.size(); i++) {
+        int match = atoi(S(groupPattern, matches[i]).c_str());
+        max = (match > max) ? match : max;
+    }
+    REQUIRE(max == 22);
+  
+
+    
 }
