@@ -10,7 +10,8 @@
 class RegExpIndexer : public LineIndexer {
     RegExp re_;
     unsigned int captureGroup_;
-    std::vector<std::tuple<std::string, uint>> captureFormatParts_;
+    std::vector<std::tuple<std::string, uint>> captureFormatTextToGroup_;
+    std::string captureFormat_;
 
 public:
     explicit RegExpIndexer(const std::string &regex);
