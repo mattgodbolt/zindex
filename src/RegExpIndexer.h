@@ -10,7 +10,7 @@
 class RegExpIndexer : public LineIndexer {
     RegExp re_;
     unsigned int captureGroup_;
-    std::string captureFormat_;
+    std::vector<std::tuple<std::string, uint>> captureFormatParts_;
 
 public:
     explicit RegExpIndexer(const std::string &regex);
@@ -21,4 +21,6 @@ public:
 private:
     void onMatch(IndexSink &sink, const std::string &line, size_t offset,
                  const RegExp::Match &match);
+    void onMatch(IndexSink &sink, const std::string &line,
+                            size_t offset, const RegExp::Matches &result);
 };

@@ -4,44 +4,45 @@
 #include <stdexcept>
 #include "RegExpIndexer.h"
 #include "IndexSink.h"
-using std::istringstream;
 
 RegExpIndexer::RegExpIndexer(const std::string &regex)
         : RegExpIndexer(regex, 0) { }
 
-RegExpIndexer::RegExpIndexer(const std::string &regex, uint captureGroup)
-        : re_(regex),
-          captureGroup_(captureGroup),
-          captureFormat_("") { }
-
-RegExpIndexer::RegExpIndexer(const std::string &regex, const std::string captureFormat)
-        : re_(regex),
-          captureFormat_(captureFormat) { 
-                RegExp r("{[0-9]+}");
-                RegExp::Matches matches;
-                char const *groupPattern = captureFormat.c_str();
-                if (r.exec(groupPattern, matches) == false) {
-                      throw std::runtime_error(
-                        "Expected at least 1 capture group match");
-                }
-                int max = 0;
-                for (size_t i = 1; i < matches.size(); i++) {                    
-                    int match = atoi(std::string(groupPattern + matches[i].first, matches[i].second - matches[i].first).c_str());
-                    max = (match > max) ? match : max;
-                }
-                captureGroup_ = max;
-          }
+RegExpIndexer::RegExpIndexer(const std::string &regex, uint captureGroup) : 
+    RegExpIndexer(regex, "{" + std::to_string(captureGroup) + "}") { }
           
-void replaceAll(std::string& str, const std::string& from, const std::string& to) {
-    if(from.empty())
-        return;
-    size_t start_pos = 0;
-    while((start_pos = str.find(from, start_pos)) != std::string::npos) {
-        str.replace(start_pos, from.length(), to);
-        start_pos += to.length(); // In case 'to' contains 'from', like replacing 'x' with 'yx'
+RegExpIndexer::RegExpIndexer(const std::string &regex, const std::string captureFormat) 
+: re_(regex) {
+    RegExp groups("{[0-9]+}");
+    RegExp::Matches matches;
+    char const *groupPattern = captureFormat.c_str();
+    if (groups.exec(groupPattern, matches) == false) {
+            throw std::runtime_error(
+            "Expected at least 1 capture group match");
     }
-}
+    
+    int start = 0;
+    int max = 0;
+    std::vector<std::tuple<std::string, uint>> partsToGroupIdx;
 
+    for (size_t i = 1; i < matches.size(); i++) {     
+        int matchStart = matches[i].first;
+        if (start < matchStart) {
+            std::tuple<std::string, uint> tup = {std::string(groupPattern + start, matchStart - start), 0};
+            partsToGroupIdx.push_back(tup);
+        }
+        auto matchEnd = matches[i].second;
+        auto matchPatternPart = std::string(groupPattern + matchStart, matchEnd - matchStart);
+        auto matchGroup = atoi(matchPatternPart.c_str());  
+        std::tuple<std::string, uint> tupMatch = {matchPatternPart, matchGroup};
+        partsToGroupIdx.push_back(tupMatch);
+        start = matchEnd;
+        max = std::max(max, matchGroup);                    
+    }
+    captureGroup_ = max;
+    captureFormatParts_ = partsToGroupIdx;
+}
+          
 void RegExpIndexer::index(IndexSink &sink, StringView line) {
     RegExp::Matches result;
     size_t offset = 0;
@@ -62,23 +63,45 @@ void RegExpIndexer::index(IndexSink &sink, StringView line) {
                                 "use '--capture' option if you have multiple "
                                 "capture groups)");
         } else {
-            if (result.size() > captureGroup_)
-                if (captureFormat_ == "") {
+            if (result.size() > captureGroup_) {
+                if (result.size() == 1) {
                     onMatch(sink, lineString, offset, result[captureGroup_]);
                 } else {
-                    std::string formattedResult(captureFormat_);
-                    for (size_t i = 1; i < captureGroup_; i++) {
-                        auto match  = result[i];
-                        auto matchLen = match.second - match.first;
-                        replaceAll(formattedResult, "{" + std::to_string(i) + "}", lineString.c_str() + offset + match.first + matchLen);    
-                    }                        
+                    onMatch(sink, lineString, offset, result);
                 }
-                    
-            else
+                
+            } else {
                 throw std::runtime_error(
                         "Did not find a match in the given capture group");
+            }
         }
         offset += result[0].second;
+    }
+}
+
+void RegExpIndexer::onMatch(IndexSink &sink, const std::string &line,
+                            size_t offset, const RegExp::Matches &result) {
+    
+    RegExp::Match lastValid ;
+    try {
+        std::string replacement;
+        for (size_t i = 0; i < captureFormatParts_.size(); i++) {
+            std::tuple<std::string, uint> part = captureFormatParts_[i];
+            auto matchGroup = std::get<1>(part);
+            std::string replacement;
+            if (matchGroup == 0) {
+                replacement.append(std::get<0>(part));
+            }  else {
+                lastValid = result[matchGroup];
+                replacement.append(line.c_str() + lastValid.first, lastValid.second - lastValid.first);        
+            }
+        }
+        sink.add(replacement, 0);
+    } catch (const std::exception &e) {
+        throw std::runtime_error(
+                "Error handling index match '" +
+                line.substr(offset + lastValid.first, lastValid.second - lastValid.first) +
+                "' - " + e.what());
     }
 }
 
