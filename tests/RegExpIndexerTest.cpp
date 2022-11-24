@@ -38,6 +38,7 @@ TEST_CASE("indexes", "[RegExpIndexer]") {
         RegExpIndexer multipleCaptureGroups("(([0-9]{4})-([0-9]{2})-([0-9]{2}) ([0-9]{2}):([0-9]{2}):([0-9]{2}).([0-9]{3}))", "{2}{3}{4}{5}{6}{7}{8}");
         CaptureSink sink;
         multipleCaptureGroups.index(sink, "2017-04-09 12:16:36.630|FOX|the quick brown fox");
+        REQUIRE(sink.captured.size() == 1);
         CHECK(sink.captured == vs({ "20170409121636630" }));
     }
 
@@ -45,13 +46,23 @@ TEST_CASE("indexes", "[RegExpIndexer]") {
         RegExpIndexer multipleCaptureGroups("\\|(DOGS)\\|[^|]+\\|(Buy|Sell)", "{2}-{1}");
         CaptureSink sink;
         multipleCaptureGroups.index(sink, "2017-04-09 12:16:36.630|DOGS|the quick brown fox|Buy");
+        REQUIRE(sink.captured.size() == 1);
         CHECK(sink.captured == vs({ "Buy-DOGS" }));
     }
 
      SECTION("fixed text in between groups") {
-        RegExpIndexer multipleCaptureGroups("\\|(.*)\\|[^|]+\\|(Buy|Sell)", "THE {2}-{1} BEARS");
+        std::string PIPE  = "\\|";
+        std::string line  = "2017-04-09 12:16:36.630|cago|the quick brown fox|Chi";
+        std::string regex = "[^|]+" + PIPE + "(.*)" + PIPE + "[^|]+" + PIPE + "(Buy|Sell|Chi)";
+
+        RegExp re(regex);
+        RegExp::Matches matches;
+        REQUIRE(re.exec(line, matches) == true);
+
+        RegExpIndexer multipleCaptureGroups(regex, "THE {2}-{1} BEARS");
         CaptureSink sink;
-        multipleCaptureGroups.index(sink, "2017-04-09 12:16:36.630|cago|the quick brown fox|Chi");
-        CHECK(sink.captured == vs({ "THE Chicago BEARS" }));
+        multipleCaptureGroups.index(sink, line);
+        REQUIRE(sink.captured.size() == 1);
+        CHECK(sink.captured == vs({ "THE Chi-cago BEARS" }));
     }
 }
