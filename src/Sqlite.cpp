@@ -147,6 +147,10 @@ void Sqlite::Statement::R(int result) const {
 }
 
 std::string Sqlite::toFile(const std::string &uri) {
+
+    if (uri.find(":") == std::string::npos) {
+        return uri;
+    }
     RegExp uriRegex("^(([^:/?#]+):)?(//([^/?#]*))?([^?#]*)");
     RegExp::Matches matches;
     if (!uriRegex.exec(uri, matches)) {
