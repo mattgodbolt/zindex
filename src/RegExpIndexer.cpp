@@ -12,53 +12,35 @@ RegExpIndexer::RegExpIndexer(const std::string &regex, uint captureGroup) :
     RegExpIndexer(regex, "{" + std::to_string(captureGroup) + "}") { }
           
 RegExpIndexer::RegExpIndexer(const std::string &regex, const std::string captureFormat) 
-: re_(regex),
-  captureFormat_(captureFormat) {
-    RegExp groups("(\\{([0-9]+)})");
+: re_(regex) {
+    RegExp groups("{[0-9]+}");
     RegExp::Matches matches;
-    const std::string &groupPattern = captureFormat;
-    uint current = 0;
+    char const *groupPattern = captureFormat.c_str();
+    if (groups.exec(groupPattern, matches) == false) {
+            throw std::runtime_error(
+            "Expected at least 1 capture group match");
+    }
+    
+    int start = 0;
     int max = 0;
     std::vector<std::tuple<std::string, uint>> partsToGroupIdx;
-    
-    
-    // any '{' requires all ints inside '}'
-    while (current < groupPattern.length()) {
-        auto bracketStart = groupPattern.find("{", current);
-        if (bracketStart == std::string::npos) {
-            auto text = groupPattern.substr(current, groupPattern.length() - current);
-            std::tuple<std::string, uint> tupMatch = {text, 0};
-            partsToGroupIdx.push_back(tupMatch);
-            break;
-        } else if (bracketStart > current) {
-            auto text = groupPattern.substr(current, bracketStart - current);
-            std::tuple<std::string, uint> tupMatch = {text, 0};
-            partsToGroupIdx.push_back(tupMatch);
-        }    
-        
-        auto bracketEnd = groupPattern.find("}", bracketStart);
-        if (bracketEnd == std::string::npos) {
-            auto text = groupPattern.substr(current, groupPattern.length() - current);
-            std::tuple<std::string, uint> tupMatch = {text, 0};
-            partsToGroupIdx.push_back(tupMatch);
-            break;
+
+    for (size_t i = 1; i < matches.size(); i++) {     
+        int matchStart = matches[i].first;
+        if (start < matchStart) {
+            std::tuple<std::string, uint> tup = {std::string(groupPattern + start, matchStart - start), 0};
+            partsToGroupIdx.push_back(tup);
         }
-        auto group = 0;
-        for (size_t i = bracketStart + 1; i < bracketEnd; i++) {
-            if (!isdigit(groupPattern[i])) {
-                throw std::runtime_error(groupPattern.substr(bracketStart, bracketEnd - bracketStart) + 
-                    " non digit found in group pattern at ");
-            }
-            group = group * 10 + groupPattern[i] - '0';
-        }
-        auto text = groupPattern.substr(bracketStart, bracketEnd - bracketStart + 1);
-        std::tuple<std::string, uint> tupMatch = {text, group};
+        auto matchEnd = matches[i].second;
+        auto matchPatternPart = std::string(groupPattern + matchStart, matchEnd - matchStart);
+        auto matchGroup = atoi(matchPatternPart.c_str());  
+        std::tuple<std::string, uint> tupMatch = {matchPatternPart, matchGroup};
         partsToGroupIdx.push_back(tupMatch);
-        max = std::max(max, group);
-        current = bracketEnd + 1;
+        start = matchEnd;
+        max = std::max(max, matchGroup);                    
     }
     captureGroup_ = max;
-    captureFormatTextToGroup_ = partsToGroupIdx;
+    captureFormatParts_ = partsToGroupIdx;
 }
           
 void RegExpIndexer::index(IndexSink &sink, StringView line) {
@@ -82,7 +64,7 @@ void RegExpIndexer::index(IndexSink &sink, StringView line) {
                                 "capture groups)");
         } else {
             if (result.size() > captureGroup_) {
-                if (captureFormatTextToGroup_.size() == 1) {
+                if (result.size() == 1) {
                     onMatch(sink, lineString, offset, result[captureGroup_]);
                 } else {
                     onMatch(sink, lineString, offset, result);
@@ -100,15 +82,13 @@ void RegExpIndexer::index(IndexSink &sink, StringView line) {
 void RegExpIndexer::onMatch(IndexSink &sink, const std::string &line,
                             size_t offset, const RegExp::Matches &result) {
     
-    RegExp::Match lastValid;
-    std::string replacement = "";
-
+    RegExp::Match lastValid ;
     try {
-        for (size_t i = 0; i < captureFormatTextToGroup_.size(); i++) {
-            std::tuple<std::string, uint> part = captureFormatTextToGroup_[i];
+        std::string replacement;
+        for (size_t i = 0; i < captureFormatParts_.size(); i++) {
+            std::tuple<std::string, uint> part = captureFormatParts_[i];
             auto matchGroup = std::get<1>(part);
-            auto replaceText = std::get<0>(part);
-            
+            std::string replacement;
             if (matchGroup == 0) {
                 replacement.append(std::get<0>(part));
             }  else {

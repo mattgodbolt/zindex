@@ -58,23 +58,17 @@ TEST_CASE("moves", "[RegExp]") {
 }
 
 TEST_CASE("max", "[RegExp]") {
-    RegExp r("\\{([0-9]+)}");
+    RegExp r("{[0-9]+}");
     RegExp::Matches matches;
     char const *groupPattern = "{22}{0}{2}";
     REQUIRE(r.exec(groupPattern, matches) == true);
     int max = 0;
-    REQUIRE(matches.size() == 2);
-    REQUIRE(S(groupPattern, matches[1]) == "22");
-      
-}
+    for (size_t i = 1; i < matches.size(); i++) {
+        int match = atoi(S(groupPattern, matches[i]).c_str());
+        max = (match > max) ? match : max;
+    }
+    REQUIRE(max == 22);
+  
 
-TEST_CASE("repeat support", "[RegExp]") {
-    RegExp r("([0-9]{4})");
-    RegExp::Matches matches;
-    char const *groupPattern = "2022";
-    REQUIRE(r.exec(groupPattern, matches) == true);
-    int max = 0;
-    REQUIRE(matches.size() == 2);
-    REQUIRE(S(groupPattern, matches[1]) == "2022");
-      
+    
 }

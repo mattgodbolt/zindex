@@ -35,23 +35,9 @@ TEST_CASE("indexes", "[RegExpIndexer]") {
     }
 
     SECTION("multiple capture groups is used as a formt") {
-        RegExpIndexer multipleCaptureGroups("(([0-9]{4})-([0-9]{2})-([0-9]{2}) ([0-9]{2}):([0-9]{2}):([0-9]{2}).([0-9]{3}))", "{2}{3}{4}{5}{6}{7}{8}");
+        RegExpIndexer multipleCaptureGroups("([0-9]{4})-([0-9]{2})-([0-9]{2}) ([0-9]{2}):([0-9]{2}):([0-9]{2}).([0-9]{3}))\\|([^|]+)", "{2}{3}{4}{5}{6}{7}");
         CaptureSink sink;
         multipleCaptureGroups.index(sink, "2017-04-09 12:16:36.630|FOX|the quick brown fox");
         CHECK(sink.captured == vs({ "20170409121636630" }));
-    }
-
-    SECTION("multiple capture groups is used 2 parts of line") {
-        RegExpIndexer multipleCaptureGroups("\\|(DOGS)\\|[^|]+\\|(Buy|Sell)", "{2}-{1}");
-        CaptureSink sink;
-        multipleCaptureGroups.index(sink, "2017-04-09 12:16:36.630|DOGS|the quick brown fox|Buy");
-        CHECK(sink.captured == vs({ "Buy-DOGS" }));
-    }
-
-     SECTION("fixed text in between groups") {
-        RegExpIndexer multipleCaptureGroups("\\|(.*)\\|[^|]+\\|(Buy|Sell)", "THE {2}-{1} BEARS");
-        CaptureSink sink;
-        multipleCaptureGroups.index(sink, "2017-04-09 12:16:36.630|cago|the quick brown fox|Chi");
-        CHECK(sink.captured == vs({ "THE Chicago BEARS" }));
     }
 }
