@@ -4,15 +4,13 @@
 #include <stdexcept>
 #include "RegExpIndexer.h"
 #include "IndexSink.h"
-using std::istringstream;
 
 RegExpIndexer::RegExpIndexer(const std::string &regex)
         : RegExpIndexer(regex, 0) { }
 
 RegExpIndexer::RegExpIndexer(const std::string &regex, uint captureGroup)
         : re_(regex),
-          captureGroup_(captureGroup),
-          captureFormat_("") { }
+          captureFormat_("{" + std::to_string(captureGroup) + "}") { }
 
 RegExpIndexer::RegExpIndexer(const std::string &regex, const std::string captureFormat)
         : re_(regex),
@@ -31,16 +29,7 @@ RegExpIndexer::RegExpIndexer(const std::string &regex, const std::string capture
                 }
                 captureGroup_ = max;
           }
-          
-void replaceAll(std::string& str, const std::string& from, const std::string& to) {
-    if(from.empty())
-        return;
-    size_t start_pos = 0;
-    while((start_pos = str.find(from, start_pos)) != std::string::npos) {
-        str.replace(start_pos, from.length(), to);
-        start_pos += to.length(); // In case 'to' contains 'from', like replacing 'x' with 'yx'
-    }
-}
+
 
 void RegExpIndexer::index(IndexSink &sink, StringView line) {
     RegExp::Matches result;
@@ -63,17 +52,7 @@ void RegExpIndexer::index(IndexSink &sink, StringView line) {
                                 "capture groups)");
         } else {
             if (result.size() > captureGroup_)
-                if (captureFormat_ == "") {
-                    onMatch(sink, lineString, offset, result[captureGroup_]);
-                } else {
-                    std::string formattedResult(captureFormat_);
-                    for (size_t i = 1; i < captureGroup_; i++) {
-                        auto match  = result[i];
-                        auto matchLen = match.second - match.first;
-                        replaceAll(formattedResult, "{" + std::to_string(i) + "}", lineString.c_str() + offset + match.first + matchLen);    
-                    }                        
-                }
-                    
+                onMatch(sink, lineString, offset, result[captureGroup_]);
             else
                 throw std::runtime_error(
                         "Did not find a match in the given capture group");
