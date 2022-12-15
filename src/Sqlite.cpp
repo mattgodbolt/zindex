@@ -147,11 +147,13 @@ void Sqlite::Statement::R(int result) const {
 }
 
 std::string Sqlite::toFile(const std::string &uri) {
+
     RegExp uriRegex("^(([^:/?#]+):)?(//([^/?#]*))?([^?#]*)");
     RegExp::Matches matches;
     if (!uriRegex.exec(uri, matches)) {
         return uri;
     }
+
     auto protocol = matches[1];
     auto result = std::string(uri.c_str() + protocol.first, protocol.second - protocol.first);
     if (result.find("file:") != 0) {

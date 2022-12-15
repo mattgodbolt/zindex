@@ -462,13 +462,15 @@ struct Index::Builder::Impl : LineSink {
     Sqlite::Statement addMetaSql;
     uint64_t indexEvery = DefaultIndexEvery;
     std::unordered_map<std::string, std::unique_ptr<IndexHandler>> indexers;
+    std::vector<uint64_t> indexedLines_;
     bool saveAllLines_;
+    bool sparseLineOffsets_;
 
     Impl(Log &log, File &&from, const std::string &fromPath,
          const std::string &indexFilename)
             : log(log), from(std::move(from)), fromPath(fromPath),
               indexFilename(indexFilename), skipFirst(0), db(log),
-              addIndexSql(log), addMetaSql(log), saveAllLines_{false} {}
+              addIndexSql(log), addMetaSql(log), saveAllLines_{false}, sparseLineOffsets_{false} {}
 
     void init() {
         auto file = db.toFile(indexFilename);
@@ -487,7 +489,8 @@ CREATE TABLE AccessPoints(
     uncompressedEndOffset INTEGER,
     compressedOffset INTEGER,
     bitOffset INTEGER,
-    window BLOB
+    window BLOB,
+    lineNum INTEGER
 ))");
 
         db.exec(R"(
@@ -536,7 +539,7 @@ INSERT INTO Indexes VALUES(:name, :creationString, :isNumeric)
         auto addIndex = db.prepare(R"(
 INSERT INTO AccessPoints VALUES(
 :uncompressedOffset, :uncompressedEndOffset,
-:compressedOffset, :bitOffset, :window))");
+:compressedOffset, :bitOffset, :window, :lineNum))");
         auto addLine = db.prepare(R"(
 INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
 
@@ -612,7 +615,8 @@ INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
                             .bindInt64(":uncompressedOffset", totalOut)
                             .bindInt64(":compressedOffset", totalIn)
                             .bindInt64(":bitOffset", zs.stream.data_type & 0x7)
-                            .bindBlob(":window", apWindow, size);
+                            .bindBlob(":window", apWindow, size)
+                            .bindInt64(":lineNum", finder.lineOffsets().size());
                     last = totalOut;
                     emitInitialAccessPoint = false;
                 }
@@ -656,7 +660,18 @@ INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
                     .step();
             progress.update<size_t>(line, lineOffsets.size() - 1);
         }
-
+        if (sparseLineOffsets_) {
+             std::string sql("");
+             if (indexers.size() > 0) {
+                for (auto &&pair : indexers) {
+                    if (sql.size() != 0) {
+                        sql += " UNION ";
+                    }
+                    sql += ("select line from " + pair.first);
+                }
+                db.exec("DELETE FROM LineOffsets where line not in (" + sql + ")");
+             }
+        }
         log.info("Flushing");
         db.exec(R"(END TRANSACTION)");
         log.info("Done");
@@ -675,6 +690,7 @@ INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
                     Index::IndexConfig config,
                     std::unique_ptr<LineIndexer> indexer) {
         saveAllLines_ = !config.sparse;
+        sparseLineOffsets_ = config.sparseLineOffsets;
         auto table = "index_" + name;
         std::string type = config.numeric ? "INTEGER" : "TEXT";
         if (config.unique) type += " PRIMARY KEY";
@@ -703,11 +719,11 @@ INSERT INTO )" + table + R"( VALUES(:key, :line, :offset)
                     + table + R"((key))");
         }
         if (config.numeric) {
-            indexers.emplace(name, std::unique_ptr<IndexHandler>(
+            indexers.emplace(table, std::unique_ptr<IndexHandler>(
                     new NumericHandler(log, std::move(indexer),
                                        std::move(inserter))));
         } else {
-            indexers.emplace(name, std::unique_ptr<IndexHandler>(
+            indexers.emplace(table, std::unique_ptr<IndexHandler>(
                     new AlphaHandler(log, std::move(indexer),
                                      std::move(inserter))));
         }
@@ -722,6 +738,7 @@ INSERT INTO )" + table + R"( VALUES(:key, :line, :offset)
         for (auto &&pair : indexers) {
             consumed |= pair.second->onLine(lineNumber, line, length);
         }
+
         return consumed || saveAllLines_;
     }
 };
