@@ -85,6 +85,139 @@ TEST_CASE("indexes files", "[Index]") {
         CheckIndex(3, "Line 3 - Hex 3 - Mod 3");
     }
 
+    SECTION("sparse line offsets") {
+        
+        Index::Builder builder(log, File(fopen(testFile.c_str(), "rb")),
+                               testFile, testFile + ".zindex");
+        unique_ptr<LineIndexer> indexer(new RegExpIndexer("^Line ([0-9]*23) -"));
+        builder
+                .addIndexer("default", "blah",
+                            Index::IndexConfig().withNumeric(true).withUnique(
+                                    true).withSparseLineOffsets(true), move(indexer))
+                .indexEvery(256 * 1024)
+                .build();
+        Index index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
+                                  testFile + ".zindex", false);
+        auto indexSize = index.indexSize("default");
+        CHECK(indexSize == 656);
+        auto CheckLine = [&](uint64_t line, const string &expected) {
+            CaptureSink cs;
+            auto l = index.getLine(line, cs);
+            REQUIRE(cs.captured.size() == 1);
+            CHECK(cs.captured.at(0) == expected);
+        };
+        
+        
+        CheckLine(23, "Line 23 - Hex 17 - Mod 23");
+        CheckLine(123, "Line 123 - Hex 7b - Mod 123");
+        CheckLine(223, "Line 223 - Hex df - Mod 223");
+        CheckLine(65523, "Line 65523 - Hex fff3 - Mod 243");
+
+        auto ValidateLine = [&](uint64_t line) {
+
+            CaptureSink cs;
+            auto text = std::to_string(line);
+            SCOPED_INFO(" line:"+text);
+            auto expected =  (text.size() > 1 && text.substr(text.size() -2) == "23");
+
+            auto l = index.getLine(line, cs);
+            REQUIRE(cs.captured.size() == (expected ? 1 : 0));
+            index.queryIndex("default", to_string(line), cs);
+            if (expected) {
+                REQUIRE(cs.captured.size() > 0);
+            } else {
+                REQUIRE(cs.captured.size() == 0);
+            }
+        };
+        ValidateLine(65536);
+        ValidateLine(12323);
+        ValidateLine(523);
+        auto CheckIndex = [&](uint64_t line, const string &expected) {
+            CaptureSink cs;
+            index.queryIndex("default", to_string(line), cs);
+            REQUIRE(cs.captured.size() == 1);
+            CHECK(cs.captured.at(0) == expected);
+        };
+        
+        CheckIndex(23, "Line 23 - Hex 17 - Mod 23");
+        CheckIndex(123, "Line 123 - Hex 7b - Mod 123");
+        CheckIndex(223, "Line 223 - Hex df - Mod 223");
+        CheckIndex(65523, "Line 65523 - Hex fff3 - Mod 243");
+    }
+
+
+    SECTION("sparse line offsets 2 indexers") {
+        
+        Index::Builder builder(log, File(fopen(testFile.c_str(), "rb")),
+                               testFile, testFile + ".zindex");
+        unique_ptr<LineIndexer> indexer(new RegExpIndexer("^Line ([0-9]*23) -"));
+        unique_ptr<LineIndexer> indexer100(new RegExpIndexer("^Line (100) -"));
+        auto config = Index::IndexConfig()
+                            .withNumeric(true)
+                            .withUnique(true)
+                            .withSparseLineOffsets(true);
+        builder
+                .addIndexer("default", "blah",
+                            config, move(indexer))
+                .addIndexer("100", "blah",
+                            config, move(indexer100))
+                .indexEvery(256 * 1024)
+                .build();
+
+        Index index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
+                                  testFile + ".zindex", false);
+        auto indexSize = index.indexSize("default");
+        CHECK(indexSize == 656);
+
+        CHECK(index.indexSize("100") == 1);
+
+        auto CheckLine = [&](uint64_t line, const string &expected) {
+            CaptureSink cs;
+            auto l = index.getLine(line, cs);
+            REQUIRE(cs.captured.size() == 1);
+            CHECK(cs.captured.at(0) == expected);
+        };
+        
+        CheckLine(100, "Line 100 - Hex 64 - Mod 100");        
+        CheckLine(23, "Line 23 - Hex 17 - Mod 23");
+        CheckLine(123, "Line 123 - Hex 7b - Mod 123");
+        CheckLine(223, "Line 223 - Hex df - Mod 223");
+        CheckLine(65523, "Line 65523 - Hex fff3 - Mod 243");
+
+        auto ValidateLine = [&](uint64_t line) {
+
+            CaptureSink cs;
+            auto text = std::to_string(line);
+            SCOPED_INFO(" line:"+text);
+            auto expected =  (text.size() > 1 && text.substr(text.size() -2) == "23") || line == 100;
+
+            auto l = index.getLine(line, cs);
+            REQUIRE(cs.captured.size() == (expected ? 1 : 0));
+            index.queryIndex("default", to_string(line), cs);
+            if (expected) {
+                REQUIRE(cs.captured.size() > 0);
+            } else {
+                REQUIRE(cs.captured.size() == 0);
+            }
+        };
+        ValidateLine(65521);
+        ValidateLine(65536);
+        ValidateLine(100);
+        ValidateLine(12323);
+        ValidateLine(523);
+        auto CheckIndex = [&](uint64_t line, const string &expected) {
+            CaptureSink cs;
+            index.queryIndex("default", to_string(line), cs);
+            REQUIRE(cs.captured.size() == 1);
+            CHECK(cs.captured.at(0) == expected);
+        };
+        
+        CheckIndex(23, "Line 23 - Hex 17 - Mod 23");
+        CheckIndex(123, "Line 123 - Hex 7b - Mod 123");
+        CheckIndex(223, "Line 223 - Hex df - Mod 223");
+        CheckIndex(65523, "Line 65523 - Hex fff3 - Mod 243");
+    }
+
     SECTION("should throw if created unique and there's duplicates") {
         Index::Builder builder(log, File(fopen(testFile.c_str(), "rb")),
                                testFile, testFile + ".zindex");

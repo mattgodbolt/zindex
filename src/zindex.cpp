@@ -40,6 +40,9 @@ int Main(int argc, const char *argv[]) {
                              " that have ids. Merges all rows that have no id to the most recent"
                              "id. Useful if your file is one id row followed by n data rows.",
                      cmd);
+    SwitchArg sparseLineOffsets("o", "sparseLineOffsets", "sparseLineOffsets - only save line offsets for rows"
+                             " that have ids. Useful if you do not need to query for non-indexed lines.",
+                     cmd);
     SwitchArg warnings("w", "warnings", "Log warnings at info level", cmd);
     ValueArg<uint64_t> checkpointEvery(
             "", "checkpoint-every",
@@ -106,6 +109,7 @@ int Main(int argc, const char *argv[]) {
         config.numeric = numeric.isSet();
         config.unique = unique.isSet();
         config.sparse = sparse.isSet();
+        config.sparseLineOffsets = sparseLineOffsets.isSet();
         //config.indexLineOffsets = // TODO - add command line flag if desired
 
         auto delimiter = delimiterArg.getValue();
