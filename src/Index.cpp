@@ -462,7 +462,6 @@ struct Index::Builder::Impl : LineSink {
     Sqlite::Statement addMetaSql;
     uint64_t indexEvery = DefaultIndexEvery;
     std::unordered_map<std::string, std::unique_ptr<IndexHandler>> indexers;
-    std::vector<uint64_t> indexedLines_;
     bool saveAllLines_;
     bool sparseLineOffsets_;
 
