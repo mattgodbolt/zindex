@@ -231,6 +231,7 @@ struct Index::Impl {
     Index::Metadata metadata_;
     size_t blockSize_;
     std::unique_ptr<CachedContext> cachedContext_;
+    bool sparseLineOffsets_;
 
     Impl(Log &log, File &&fromCompressed, Sqlite &&db)
             : log_(log), compressed_(std::move(fromCompressed)),
@@ -249,10 +250,12 @@ LIMIT 1)")) {
                 auto value = queryMeta.columnString(1);
                 log_.debug("Metadata: ", key, " = ", value);
                 metadata_.emplace(key, value);
+                
             }
         } catch (const std::exception &e) {
             log.warn("Caught exception reading metadata: ", e.what());
         }
+        sparseLineOffsets_ = metadata_.find("sparseLineOffsets") != metadata_.end() && metadata_.at("sparseLineOffsets") == "1";
         auto stmt = db_.prepare(
                 "SELECT MAX(uncompressedEndOffset)/COUNT(*) FROM AccessPoints");
         if (stmt.step()) {
@@ -293,6 +296,8 @@ LIMIT 1)")) {
                         "Compressed file has been modified since index was built");
             }
         }
+
+       
     }
 
     bool getLine(uint64_t line, LineSink &sink) {
@@ -330,7 +335,11 @@ WHERE key = :query
     }
 
     size_t indexSize(const std::string &index) const {
-        auto stmt = db_.prepare("SELECT COUNT(*) FROM index_" + index);
+        return tableSize("index_" + index);
+    }
+
+     size_t tableSize(const std::string &name) const {
+        auto stmt = db_.prepare("SELECT COUNT(*) FROM " + name);
         if (stmt.step()) return 0;
         return static_cast<size_t>(stmt.columnInt64(0));
     }
@@ -506,7 +515,6 @@ CREATE TABLE Metadata(
         }
         addMeta("compressedSize", std::to_string(stats.st_size));
         addMeta("compressedModTime", std::to_string(stats.st_mtime));
-        addMeta("sparse", std::to_string(!saveAllLines_));
 
         db.exec(R"(
 CREATE TABLE LineOffsets(
@@ -527,6 +535,8 @@ INSERT INTO Indexes VALUES(:name, :creationString, :isNumeric)
     }
 
     void build() {
+        addMeta("sparse", std::to_string(!saveAllLines_));
+        addMeta("sparseLineOffsets", std::to_string(sparseLineOffsets_));
         log.info("Building index, generating a checkpoint every ",
                  PrettyBytes(indexEvery));
         struct stat compressedStat;
@@ -688,8 +698,9 @@ INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
     void addIndexer(const std::string &name, const std::string &creation,
                     Index::IndexConfig config,
                     std::unique_ptr<LineIndexer> indexer) {
-        saveAllLines_ = !config.sparse;
-        sparseLineOffsets_ = config.sparseLineOffsets;
+        //these flags must be consistent across all indexes, only set to true once
+        saveAllLines_ |= !config.sparse;
+        sparseLineOffsets_ |= config.sparseLineOffsets;
         auto table = "index_" + name;
         std::string type = config.numeric ? "INTEGER" : "TEXT";
         if (config.unique) type += " PRIMARY KEY";
@@ -818,6 +829,10 @@ Index::Builder::~Builder() {
 
 size_t Index::indexSize(const std::string &index) const {
     return impl_->indexSize(index);
+}
+
+size_t Index::tableSize(const std::string &name) const {
+    return impl_->tableSize(name);
 }
 
 const Index::Metadata &Index::getMetadata() const {

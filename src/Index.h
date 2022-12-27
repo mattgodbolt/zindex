@@ -101,6 +101,9 @@ public:
     // Return the number of entries in a particular sub-index.
     size_t indexSize(const std::string &index) const;
 
+    // Return the number of entries in a particular table.
+    size_t tableSize(const std::string &name) const;
+
     // Metadata is a blob of strings that describe aspects of the index. They're
     // pretty opaque and not designed to be used in user code.
     using Metadata = std::unordered_map<std::string, std::string>;

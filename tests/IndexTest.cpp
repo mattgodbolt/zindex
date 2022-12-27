@@ -168,10 +168,13 @@ TEST_CASE("indexes files", "[Index]") {
                                   testFile + ".zindex", false);
         auto indexSize = index.indexSize("default");
         CHECK(indexSize == 656);
-
         CHECK(index.indexSize("100") == 1);
 
+        auto lineOffsetsSize = index.tableSize("lineOffsets");
+        CHECK(lineOffsetsSize == 657);
+
         auto CheckLine = [&](uint64_t line, const string &expected) {
+            SCOPED_INFO(" line:"+expected);
             CaptureSink cs;
             auto l = index.getLine(line, cs);
             REQUIRE(cs.captured.size() == 1);
