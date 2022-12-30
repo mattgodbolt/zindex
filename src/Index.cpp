@@ -69,18 +69,19 @@ struct Progress {
 
 struct OneLineSink : LineSink {
     bool complete = false;
-    const size_t lineNum;
+    const size_t lineNumToFind;
+    const size_t startingLineNum;
+    size_t lastLineNum = 0;
     LineSink &delegate;
-    const char *lastLine;
 
-    OneLineSink(size_t lineNum, LineSink &delegate) : lineNum(lineNum), delegate(delegate) {}
+    OneLineSink(size_t lineNumToFind, size_t startingLineNum, LineSink &delegate) : lineNumToFind(lineNumToFind), startingLineNum(startingLineNum), delegate(delegate) {}
 
     bool onLine(
             size_t lineNumber,
             size_t fileOffset,
             const char *line, size_t length) override {
-        lastLine = line;
-        if (lineNum == lineNumber) {
+        lastLineNum = startingLineNum + lineNumber;
+        if (lineNumToFind == lastLineNum) {
             delegate.onLine(lineNumber, fileOffset, line, length);
             complete = true;
         }
@@ -363,6 +364,7 @@ LIMIT 1)")) {
                 auto bitOffset = static_cast<int>(sparseLineOffsetsQuery_.columnInt64(3));
                 auto windowData = sparseLineOffsetsQuery_.columnBlob(4);
                 print(lineNum, line, 0, compressedOffset, uncompressedOffset, bitOffset, 0, windowData, sink);
+                return true;
             }
             return false;
         }
@@ -457,12 +459,11 @@ WHERE key = :query
         std::unique_ptr<CachedContext> context = resetContext(offset != 0 ? offset : uncompressedOffset - 1, compressedOffset, uncompressedOffset, bitOffset, windowData);
         uint8_t discardBuffer[WindowSize];        
         auto &zs = context->zs_;
-        if (lineNum != 0) {
-            //pass the data to linefinder until we pass the desired line
+        if (length == 0) {
+            //we do not have lineoffset data
 
-            OneLineSink oneLiner(line - lineNum, sink);
-            DelegatinhPrintSink delegating(false, oneLiner);
-            LineFinder finder(delegating);
+            OneLineSink oneLiner(line, lineNum, sink);
+            LineFinder finder(oneLiner);
 
             bool first = true;
             auto ret = 0;
@@ -485,6 +486,11 @@ WHERE key = :query
                     if (!first) {
                         finder.add(window, WindowSize, false);
                     }
+                    if (oneLiner.lastLineNum > line) {
+                        //passed the line
+                        break;
+                    }
+
                     first = false;
                 }
                 
@@ -516,6 +522,11 @@ WHERE key = :query
                     // mode and play on.
                     context.reset();
                 }
+                if (oneLiner.lastLineNum > line) {
+                        //passed the line
+                        break;
+                }
+
             } while (ret != Z_STREAM_END);
             finder.add(window, WindowSize - zs.stream.avail_out, true);
 
@@ -588,7 +599,6 @@ WHERE key = :query
         } while (skipping);
         // Save the context for next time.
         cachedContext_ = std::move(context);
-        log_.debug("lineNum:" + lineNum);
         sink.onLine(line, offset, reinterpret_cast<const char *>(lineBuf.get()),
                     length - 1);
     }
