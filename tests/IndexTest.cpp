@@ -46,6 +46,7 @@ TEST_CASE("indexes files", "[Index]") {
         // Handy for checking the temporary file actually is created as expected
 //        REQUIRE(system(("gzip -l " + testFile).c_str()) == 0);
     }
+    
     SECTION("unique numerical") {
         Index::Builder builder(log, File(fopen(testFile.c_str(), "rb")),
                                testFile, testFile + ".zindex");
@@ -59,6 +60,9 @@ TEST_CASE("indexes files", "[Index]") {
         Index index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
                                   testFile + ".zindex", false);
         CHECK(index.indexSize("default") == 65536);
+        CHECK(index.tableSize("lineOffsets") == 65536);
+
+
         auto CheckLine = [&](uint64_t line, const string &expected) {
             CaptureSink cs;
             index.getLine(line, cs);
@@ -83,6 +87,81 @@ TEST_CASE("indexes files", "[Index]") {
         CheckIndex(1, "Line 1 - Hex 1 - Mod 1");
         CheckIndex(2, "Line 2 - Hex 2 - Mod 2");
         CheckIndex(3, "Line 3 - Hex 3 - Mod 3");
+    }
+
+    SECTION("sparse line offsets 2 indexers") {
+        
+        Index::Builder builder(log, File(fopen(testFile.c_str(), "rb")),
+                               testFile, testFile + ".zindex");
+        unique_ptr<LineIndexer> indexer(new RegExpIndexer("^Line ([0-9]*23) -"));
+        unique_ptr<LineIndexer> indexer100(new RegExpIndexer("^Line (100) -"));
+        auto config = Index::IndexConfig()
+                            .withNumeric(true)
+                            .withUnique(true)
+                            .withSparseLineOffsets(true);
+        builder
+                .addIndexer("_23", "blah",
+                            config, move(indexer))
+                .addIndexer("_100", "blah",
+                            config, move(indexer100))
+                .indexEvery(256 * 1024)
+                .build();
+
+        Index index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
+                                  testFile + ".zindex", false);
+
+        CHECK(index.indexSize("_23") == 656);
+        CHECK(index.indexSize("_100") == 1);
+        CHECK(index.tableSize("lineOffsets") == 657);
+
+        auto CheckLine = [&](uint64_t line, const string &expected, bool exists, bool indexed, const string &indexName) {
+            auto message = " line:"+to_string(line) + " " + expected;
+            SCOPED_INFO(message);
+            CaptureSink cs;
+            index.queryIndex(indexName, to_string(line), cs);
+            REQUIRE(cs.captured.size() == (indexed ? 1 : 0));
+            cs.captured.clear();
+            index.getLine(line, cs);
+            if (exists) {
+                REQUIRE(cs.captured.size() == 1);
+                CHECK(cs.captured.at(0) == expected);
+            } else {
+                REQUIRE(cs.captured.size() == 0);
+            }
+        };
+
+        auto indexName = "_100";
+        //indexed
+        CheckLine(100, "Line 100 - Hex 64 - Mod 100", true, true, indexName);        
+        CheckLine(23, "Line 23 - Hex 17 - Mod 23", true, false, indexName);        
+        CheckLine(123, "Line 123 - Hex 7b - Mod 123", true, false, indexName);        
+        CheckLine(223, "Line 223 - Hex df - Mod 223", true, false, indexName);        
+        CheckLine(65523, "Line 65523 - Hex fff3 - Mod 243", true, false, indexName);        
+
+        //non-indexed
+        CheckLine(1, "Line 1 - Hex 1 - Mod 1", true, false, indexName);        
+        CheckLine(65536, "Line 65536 - Hex 10000 - Mod 0", true, false, indexName);        
+
+        //non-existing
+        CheckLine(6553700000, "", false, false, indexName);
+        CheckLine(65537, "", false, false, indexName);
+
+
+        indexName = "_23";
+        //indexed
+        CheckLine(23, "Line 23 - Hex 17 - Mod 23", true, true, indexName);        
+        CheckLine(123, "Line 123 - Hex 7b - Mod 123", true, true, indexName);        
+        CheckLine(223, "Line 223 - Hex df - Mod 223", true, true, indexName);        
+        CheckLine(65523, "Line 65523 - Hex fff3 - Mod 243", true, true, indexName);        
+        CheckLine(100, "Line 100 - Hex 64 - Mod 100", true, false, indexName);        
+
+        //non-indexed
+        CheckLine(1, "Line 1 - Hex 1 - Mod 1", true, false, indexName);        
+        CheckLine(65536, "Line 65536 - Hex 10000 - Mod 0", true, false, indexName);        
+
+        //non-existing
+        CheckLine(6553700000, "", false, false, indexName);
+        CheckLine(65537, "", false, false, indexName);
     }
 
     SECTION("should throw if created unique and there's duplicates") {

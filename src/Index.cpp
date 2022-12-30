@@ -66,6 +66,45 @@ struct Progress {
     }
 };
 
+
+struct OneLineSink : LineSink {
+    bool complete = false;
+    const size_t lineNumToFind;
+    const size_t startingLineNum;
+    size_t lastLineNum = 0;
+    LineSink &delegate;
+
+    OneLineSink(size_t lineNumToFind, size_t startingLineNum, LineSink &delegate) : lineNumToFind(lineNumToFind), startingLineNum(startingLineNum), delegate(delegate) {}
+
+    bool onLine(
+            size_t lineNumber,
+            size_t fileOffset,
+            const char *line, size_t length) override {
+        lastLineNum = startingLineNum + lineNumber;
+        if (lineNumToFind == lastLineNum) {
+            delegate.onLine(lineNumber, fileOffset, line, length);
+            complete = true;
+        }
+
+        return true;
+    }
+    
+};
+
+struct DelegatinhPrintSink : LineSink {
+    bool enabled;
+    LineSink &sink;
+    DelegatinhPrintSink(bool enabled, LineSink &sink) : enabled(enabled), sink(sink) { }
+
+    bool onLine(size_t l, size_t size, const char *line, size_t length) override {
+        if (enabled) {
+            std::cout << l << ":" << std::string(line, length) << std::endl;
+        }
+        
+        return sink.onLine(l, size, line, length);
+    }
+};
+
 size_t makeWindow(uint8_t *out, size_t outSize, const uint8_t *in,
                   uint64_t left) {
     uint8_t temp[WindowSize];
@@ -228,18 +267,24 @@ struct Index::Impl {
     File compressed_;
     Sqlite db_;
     Sqlite::Statement lineQuery_;
+    Sqlite::Statement sparseLineOffsetsQuery_;
     Index::Metadata metadata_;
     size_t blockSize_;
     std::unique_ptr<CachedContext> cachedContext_;
+    bool sparseLineOffsets_;
 
     Impl(Log &log, File &&fromCompressed, Sqlite &&db)
             : log_(log), compressed_(std::move(fromCompressed)),
               db_(std::move(db)),
               lineQuery_(db_.prepare(R"(
-SELECT line, offset, compressedOffset, uncompressedOffset, length, bitOffset, window
-FROM LineOffsets, AccessPoints
-WHERE offset >= uncompressedOffset AND offset <= uncompressedEndOffset
-AND line = :line
+SELECT lo.line, lo.offset, ap.compressedOffset, ap.uncompressedOffset, lo.length, ap.bitOffset, ap.window, ap.lineNum
+FROM LineOffsets lo, AccessPoints ap
+WHERE lo.offset >= ap.uncompressedOffset AND offset <= ap.uncompressedEndOffset
+AND lo.line = :line
+LIMIT 1)")), 
+            sparseLineOffsetsQuery_(db_.prepare(R"(
+SELECT lineNum, compressedOffset, uncompressedOffset, bitOffset, window
+FROM AccessPoints where lineNum <= :line order by lineNum desc
 LIMIT 1)")) {
         try {
             auto queryMeta = db_.prepare("SELECT key, value FROM Metadata");
@@ -249,10 +294,14 @@ LIMIT 1)")) {
                 auto value = queryMeta.columnString(1);
                 log_.debug("Metadata: ", key, " = ", value);
                 metadata_.emplace(key, value);
+                
             }
         } catch (const std::exception &e) {
             log.warn("Caught exception reading metadata: ", e.what());
         }
+        
+        sparseLineOffsets_ = metadata_.find("sparseLineOffsets") != metadata_.end() && metadata_.at("sparseLineOffsets") == "1";
+    
         auto stmt = db_.prepare(
                 "SELECT MAX(uncompressedEndOffset)/COUNT(*) FROM AccessPoints");
         if (stmt.step()) {
@@ -293,12 +342,34 @@ LIMIT 1)")) {
                         "Compressed file has been modified since index was built");
             }
         }
+
+       
     }
 
     bool getLine(uint64_t line, LineSink &sink) {
         lineQuery_.reset();
         lineQuery_.bindInt64(":line", line);
-        if (lineQuery_.step()) return false;
+        auto noResults = lineQuery_.step();
+        if (noResults) {
+            if (sparseLineOffsets_) {
+                
+                sparseLineOffsetsQuery_.reset();
+                sparseLineOffsetsQuery_.bindInt64(":line", line);
+                if (sparseLineOffsetsQuery_.step()) {
+                    return false;
+                }                
+                auto lineNum = static_cast<size_t>(sparseLineOffsetsQuery_.columnInt64(0));
+                auto compressedOffset = static_cast<size_t>(sparseLineOffsetsQuery_.columnInt64(1));
+                auto uncompressedOffset = static_cast<size_t>(sparseLineOffsetsQuery_.columnInt64(2));
+                auto bitOffset = static_cast<int>(sparseLineOffsetsQuery_.columnInt64(3));
+                auto windowData = sparseLineOffsetsQuery_.columnBlob(4);
+                print(lineNum, line, 0, compressedOffset, uncompressedOffset, bitOffset, 0, windowData, sink);
+                return true;
+            }
+            return false;
+        }
+        
+
         print(lineQuery_, sink);
         return true;
     }
@@ -330,7 +401,11 @@ WHERE key = :query
     }
 
     size_t indexSize(const std::string &index) const {
-        auto stmt = db_.prepare("SELECT COUNT(*) FROM index_" + index);
+        return tableSize("index_" + index);
+    }
+
+    size_t tableSize(const std::string &name) const {
+        auto stmt = db_.prepare("SELECT COUNT(*) FROM " + name);
         if (stmt.step()) return 0;
         return static_cast<size_t>(stmt.columnInt64(0));
     }
@@ -338,23 +413,26 @@ WHERE key = :query
     void print(Sqlite::Statement &q, LineSink &sink) {
         auto line = static_cast<size_t>(q.columnInt64(0));
         auto offset = static_cast<size_t>(q.columnInt64(1));
-        // We use and update context while in here. Only if we successfully
-        // decode a line do we save it in the cachedContext_ for a subsequent
-        // call.
+        auto compressedOffset = static_cast<size_t>(q.columnInt64(2));
+        auto uncompressedOffset = static_cast<size_t>(q.columnInt64(3));
+        auto bitOffset = static_cast<int>(q.columnInt64(5));
+        auto length = q.columnInt64(4);
+        auto windowData = q.columnBlob(6);
+        print(0, line, offset, compressedOffset, uncompressedOffset, bitOffset, length, windowData, sink);
+    }
+
+    std::unique_ptr<CachedContext> resetContext(size_t offset, size_t compressedOffset, size_t uncompressedOffset, int bitOffset, const std::vector<uint8_t> windowData) {
         std::unique_ptr<CachedContext> context;
         if (cachedContext_ && cachedContext_->offsetWithinRange(offset)) {
             // We can reuse the previous context.
             log_.debug("Reusing previous context");
             context = std::move(cachedContext_);
         } else {
-            auto compressedOffset = static_cast<size_t>(q.columnInt64(2));
-            auto uncompressedOffset = static_cast<size_t>(q.columnInt64(3));
-            auto bitOffset = static_cast<int>(q.columnInt64(5));
             log_.debug("Creating new context at offset ", compressedOffset, ":",
                        bitOffset);
             context.reset(new CachedContext(uncompressedOffset, blockSize_));
             uint8_t window[WindowSize];
-            uncompress(q.columnBlob(6), window, WindowSize);
+            uncompress(windowData, window, WindowSize);
 
             seek(compressed_, bitOffset ? compressedOffset - 1
                                         : compressedOffset);
@@ -370,16 +448,98 @@ WHERE key = :query
             X(inflateSetDictionary(&context->zs_.stream,
                                    &window[0], WindowSize));
         }
-        uint8_t discardBuffer[WindowSize];
+        return context;
+    }
 
-        auto length = q.columnInt64(4);
-        constexpr auto MaxLength = 64u * 1024 * 1024;
-        if (length >= MaxLength) throw std::runtime_error("Line too long!");
+    void print(size_t lineNum, size_t line, size_t offset, size_t compressedOffset, size_t uncompressedOffset, int bitOffset, size_t length, const std::vector<uint8_t> windowData, LineSink &sink) {
+        // We use and update context while in here. Only if we successfully
+        // decode a line do we save it in the cachedContext_ for a subsequent
+        // call.
+        constexpr auto MaxLength = (64u * 1024 * 1024) - 1;
+        std::unique_ptr<CachedContext> context = resetContext(offset != 0 ? offset : uncompressedOffset - 1, compressedOffset, uncompressedOffset, bitOffset, windowData);
+        uint8_t discardBuffer[WindowSize];        
+        auto &zs = context->zs_;
+        if (length == 0) {
+            //we do not have lineoffset data
+
+            OneLineSink oneLiner(line, lineNum, sink);
+            LineFinder finder(oneLiner);
+
+            bool first = true;
+            auto ret = 0;
+            uint8_t window[WindowSize];
+
+
+            do {
+                if (zs.stream.avail_in == 0) {
+                    zs.stream.avail_in = ::fread(context->input_, 1,
+                                                 sizeof(context->input_),
+                                                 compressed_.get());
+                    if (ferror(compressed_.get())) throw ZlibError(Z_ERRNO);
+                    if (zs.stream.avail_in == 0) throw ZlibError(Z_DATA_ERROR);
+                    zs.stream.next_in = context->input_;
+                }
+
+                if (zs.stream.avail_out == 0) {
+                    zs.stream.avail_out = WindowSize;
+                    zs.stream.next_out = window;
+                    if (!first) {
+                        finder.add(window, WindowSize, false);
+                    }
+                    if (oneLiner.lastLineNum > line) {
+                        //passed the line
+                        break;
+                    }
+
+                    first = false;
+                }
+                
+                auto availBefore = zs.stream.avail_out;
+                ret = inflate(&zs.stream, Z_NO_FLUSH);
+                if (ret == Z_NEED_DICT) throw ZlibError(Z_DATA_ERROR);
+                if (ret == Z_MEM_ERROR || ret == Z_DATA_ERROR)
+                    throw ZlibError(ret);
+                auto numUncompressed = availBefore - zs.stream.avail_out;
+                context->uncompressedOffset_ += numUncompressed;
+                if (ret == Z_STREAM_END) {
+                    // The end of the stream; but is it the end of the file?
+                    if (zs.stream.avail_in == 0 && feof(compressed_.get()))
+                        break; // yes: we're done
+                    // Else, we're going to restart the decompressor: gzip
+                    // allows for multiple gzip files to be concatenated
+                    // together and says they should be treated as a single
+                    // file.
+                    log_.debug("Resetting stream at EOS at offset ",
+                               context->uncompressedOffset_);
+                    // As we opened the stream in RAW mode we can't continue
+                    // decoding from here: the decoder doesn't know if there's
+                    // a trailing CRC or similar here. So we have to throw away
+                    // state at this point. We know the indexer always stops us
+                    // from crossing a divide here. We check we weren't skipping
+                    // still (which we ought not to be...) and then chuck the
+                    // whole context out.  Ideally we'd skip the (optional?)
+                    // trailer and reset the zlib state back in normal, non-raw
+                    // mode and play on.
+                    context.reset();
+                }
+                if (oneLiner.lastLineNum > line) {
+                        //passed the line
+                        break;
+                }
+
+            } while (ret != Z_STREAM_END);
+            finder.add(window, WindowSize - zs.stream.avail_out, true);
+
+            return;
+        }
+
+
+        if (length > MaxLength) throw std::runtime_error("Line too long!");
         std::unique_ptr<uint8_t[]> lineBuf(new uint8_t[length]);
 
         auto numToSkip = offset - context->uncompressedOffset_;
         bool skipping = true;
-        auto &zs = context->zs_;
+
         do {
             if (numToSkip == 0 && skipping) {
                 zs.stream.avail_out = static_cast<uInt>(length);
@@ -463,12 +623,13 @@ struct Index::Builder::Impl : LineSink {
     uint64_t indexEvery = DefaultIndexEvery;
     std::unordered_map<std::string, std::unique_ptr<IndexHandler>> indexers;
     bool saveAllLines_;
+    bool sparseLineOffsets_;
 
     Impl(Log &log, File &&from, const std::string &fromPath,
          const std::string &indexFilename)
             : log(log), from(std::move(from)), fromPath(fromPath),
               indexFilename(indexFilename), skipFirst(0), db(log),
-              addIndexSql(log), addMetaSql(log), saveAllLines_{false} {}
+              addIndexSql(log), addMetaSql(log), saveAllLines_{false}, sparseLineOffsets_{false} {}
 
     void init() {
         auto file = db.toFile(indexFilename);
@@ -487,7 +648,8 @@ CREATE TABLE AccessPoints(
     uncompressedEndOffset INTEGER,
     compressedOffset INTEGER,
     bitOffset INTEGER,
-    window BLOB
+    window BLOB,
+    lineNum INTEGER
 ))");
 
         db.exec(R"(
@@ -504,7 +666,6 @@ CREATE TABLE Metadata(
         }
         addMeta("compressedSize", std::to_string(stats.st_size));
         addMeta("compressedModTime", std::to_string(stats.st_mtime));
-        addMeta("sparse", std::to_string(!saveAllLines_));
 
         db.exec(R"(
 CREATE TABLE LineOffsets(
@@ -525,6 +686,8 @@ INSERT INTO Indexes VALUES(:name, :creationString, :isNumeric)
     }
 
     void build() {
+        addMeta("sparse", std::to_string(!saveAllLines_));
+        addMeta("sparseLineOffsets", std::to_string(sparseLineOffsets_));
         log.info("Building index, generating a checkpoint every ",
                  PrettyBytes(indexEvery));
         struct stat compressedStat;
@@ -536,7 +699,7 @@ INSERT INTO Indexes VALUES(:name, :creationString, :isNumeric)
         auto addIndex = db.prepare(R"(
 INSERT INTO AccessPoints VALUES(
 :uncompressedOffset, :uncompressedEndOffset,
-:compressedOffset, :bitOffset, :window))");
+:compressedOffset, :bitOffset, :window, :lineNum))");
         auto addLine = db.prepare(R"(
 INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
 
@@ -569,7 +732,8 @@ INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
                 zs.stream.next_in = input;
             }
             do {
-                if (zs.stream.avail_out == 0) {
+                
+                if (zs.stream.avail_out == 0 ) {
                     zs.stream.avail_out = WindowSize;
                     zs.stream.next_out = window;
                     if (!first) {
@@ -577,6 +741,8 @@ INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
                     }
                     first = false;
                 }
+                
+                
                 totalIn += zs.stream.avail_in;
                 totalOut += zs.stream.avail_out;
                 ret = inflate(&zs.stream, Z_BLOCK);
@@ -597,6 +763,11 @@ INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
                     log.debug("Creating checkpoint at ", PrettyBytes(totalOut),
                               " (compressed offset ", PrettyBytes(totalIn),
                               ")");
+                    auto currentLineNumber = finder.lineOffsets().size();
+                    if (WindowSize != zs.stream.avail_out) {
+                        for (unsigned int i = 0; i < WindowSize - zs.stream.avail_out; i++)
+                            if (window[i] == '\n') currentLineNumber++;
+                    }
                     if (totalOut != 0) {
                         // Flush previous information.
                         addIndex
@@ -612,7 +783,8 @@ INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
                             .bindInt64(":uncompressedOffset", totalOut)
                             .bindInt64(":compressedOffset", totalIn)
                             .bindInt64(":bitOffset", zs.stream.data_type & 0x7)
-                            .bindBlob(":window", apWindow, size);
+                            .bindBlob(":window", apWindow, size)
+                            .bindInt64(":lineNum", currentLineNumber);
                     last = totalOut;
                     emitInitialAccessPoint = false;
                 }
@@ -656,7 +828,18 @@ INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
                     .step();
             progress.update<size_t>(line, lineOffsets.size() - 1);
         }
-
+        if (sparseLineOffsets_) {
+             std::string sql("");
+             if (indexers.size() > 0) {
+                for (auto &&pair : indexers) {
+                    if (sql.size() != 0) {
+                        sql += " UNION ";
+                    }
+                    sql += ("select line from " + pair.first);
+                }
+                db.exec("DELETE FROM LineOffsets where line not in (" + sql + ")");
+             }
+        }
         log.info("Flushing");
         db.exec(R"(END TRANSACTION)");
         log.info("Done");
@@ -674,7 +857,9 @@ INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
     void addIndexer(const std::string &name, const std::string &creation,
                     Index::IndexConfig config,
                     std::unique_ptr<LineIndexer> indexer) {
-        saveAllLines_ = !config.sparse;
+        //these flags must be consistent across all indexes, only set to true once
+        saveAllLines_ |= !config.sparse;
+        sparseLineOffsets_ |= config.sparseLineOffsets;
         auto table = "index_" + name;
         std::string type = config.numeric ? "INTEGER" : "TEXT";
         if (config.unique) type += " PRIMARY KEY";
@@ -703,11 +888,11 @@ INSERT INTO )" + table + R"( VALUES(:key, :line, :offset)
                     + table + R"((key))");
         }
         if (config.numeric) {
-            indexers.emplace(name, std::unique_ptr<IndexHandler>(
+            indexers.emplace(table, std::unique_ptr<IndexHandler>(
                     new NumericHandler(log, std::move(indexer),
                                        std::move(inserter))));
         } else {
-            indexers.emplace(name, std::unique_ptr<IndexHandler>(
+            indexers.emplace(table, std::unique_ptr<IndexHandler>(
                     new AlphaHandler(log, std::move(indexer),
                                      std::move(inserter))));
         }
@@ -722,6 +907,7 @@ INSERT INTO )" + table + R"( VALUES(:key, :line, :offset)
         for (auto &&pair : indexers) {
             consumed |= pair.second->onLine(lineNumber, line, length);
         }
+
         return consumed || saveAllLines_;
     }
 };
@@ -802,6 +988,10 @@ Index::Builder::~Builder() {
 
 size_t Index::indexSize(const std::string &index) const {
     return impl_->indexSize(index);
+}
+
+size_t Index::tableSize(const std::string &name) const {
+    return impl_->tableSize(name);
 }
 
 const Index::Metadata &Index::getMetadata() const {
