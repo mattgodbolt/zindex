@@ -5,7 +5,10 @@
 #include <catch2/catch_test_macros.hpp>
 
 TEST_CASE("constructs regexes", "[RegExp]") {
+#ifndef __APPLE__
+    // macOS's regcomp rejects an empty expression; glibc accepts it.
     RegExp r1("");
+#endif
     RegExp r2(".*");
     RegExp r3("\"eventId\":([0-9]+)");
 
@@ -15,7 +18,9 @@ TEST_CASE("constructs regexes", "[RegExp]") {
             RegExp r("(");
         } catch (const std::runtime_error &e) {
             threw = true;
-            REQUIRE(strstr(e.what(), "Unmatched (") != nullptr);
+            // The wording of regcomp's error is up to the C library.
+            REQUIRE((strstr(e.what(), "Unmatched (") != nullptr ||
+                     strstr(e.what(), "parentheses not balanced") != nullptr));
         }
         REQUIRE(threw);
     }
