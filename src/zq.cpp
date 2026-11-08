@@ -122,7 +122,7 @@ int Main(int argc, const char *argv[]) {
 
         auto indexFile = indexArg.isSet() ? indexArg.getValue() :
                          inputFile.getValue() + ".zindex";
-        auto index = Index::load(log, move(in), indexFile.c_str(),
+        auto index = Index::load(log, std::move(in), indexFile.c_str(),
                                  forceLoad.isSet());
         auto queryIndex = queryIndexArg.isSet() ? queryIndexArg.getValue() : "default";
 
