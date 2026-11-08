@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: "Linux gcc",      os: ubuntu-latest, cc: gcc,   cxx: g++,     build_type: Release }
+          - { name: "Linux clang",    os: ubuntu-latest, cc: clang, cxx: clang++, build_type: Release }
+          - { name: "macOS (arm64)",  os: macos-latest,  cc: clang, cxx: clang++, build_type: Release }
+          - name: "Linux ASan+UBSan"
+            os: ubuntu-latest
+            cc: gcc
+            cxx: g++
+            build_type: Debug
+            sanitize: "-fsanitize=address,undefined -fno-sanitize-recover=undefined"
+    env:
+      CC: ${{ matrix.cc }}
+      CXX: ${{ matrix.cxx }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: >
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+          -DWarningsAsErrors=ON
+          -DCMAKE_CXX_FLAGS="${{ matrix.sanitize }}"
+          -DCMAKE_EXE_LINKER_FLAGS="${{ matrix.sanitize }}"
+      - name: Build
+        run: cmake --build build --parallel
+      - name: Test
+        run: ctest --test-dir build --parallel --output-on-failure
