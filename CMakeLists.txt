@@ -81,12 +81,17 @@ include(Catch)
 # offline or against a local copy, pass -DFETCHCONTENT_SOURCE_DIR_SQLITE3=<dir>
 # (a directory containing sqlite3.c, sqlite3.h and shell.c).
 include(FetchContent)
+if (POLICY CMP0135)
+    # Use the extraction time, not the archive's, as the file timestamps.
+    cmake_policy(SET CMP0135 NEW)
+endif ()
 FetchContent_Declare(sqlite3
         URL https://www.sqlite.org/2026/sqlite-amalgamation-3540100.zip
-        URL_HASH SHA3_256=92281c86e2957f9b9305890f9ac04204caa7b677cc868dc326d942689df28e30
-        DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
+        URL_HASH SHA3_256=92281c86e2957f9b9305890f9ac04204caa7b677cc868dc326d942689df28e30)
 FetchContent_MakeAvailable(sqlite3)
 add_library(sqlite3 STATIC ${sqlite3_SOURCE_DIR}/sqlite3.c)
+# Position-independent so it can still be linked into a shared libzindex.
+set_target_properties(sqlite3 PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_include_directories(sqlite3 SYSTEM PUBLIC ${sqlite3_SOURCE_DIR})
 target_link_libraries(sqlite3 PUBLIC Threads::Threads ${CMAKE_DL_LIBS})
 if (UNIX)
@@ -162,6 +167,10 @@ target_link_libraries(unit-tests libzindex Catch2::Catch2WithMain ${ZLIB_LIBRARI
 if (BuildSqlShell)
     add_executable(sql-shell ${sqlite3_SOURCE_DIR}/shell.c)
     target_link_libraries(sql-shell sqlite3 ${COMMON_LIBS})
+    if (Static)
+        # Must match the library, or the shell's .load refers to missing symbols.
+        target_compile_definitions(sql-shell PRIVATE SQLITE_OMIT_LOAD_EXTENSION=1)
+    endif ()
 endif (BuildSqlShell)
 
 find_program(MEMORYCHECK_COMMAND valgrind)
