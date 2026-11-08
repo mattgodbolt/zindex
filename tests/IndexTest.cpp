@@ -292,7 +292,8 @@ TEST_CASE("reads an unterminated last line at a chunk boundary", "[Index]") {
     size_t lineNum = 0;
     while (true) {
         auto line = "Line " + to_string(lineNum + 1) + "\n";
-        if (data.size() + line.size() + 16 > dataSize) break;
+        if (data.size() + line.size() + 16 > dataSize)
+            break;
         data += line;
         ++lineNum;
     }
