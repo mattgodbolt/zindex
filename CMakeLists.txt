@@ -46,7 +46,6 @@ endif (UseLTO)
 set(COMMON_LIBS Threads::Threads)
 if (Static)
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static -static-libgcc -static-libstdc++")
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DSQLITE_OMIT_LOAD_EXTENSION=1")
     set(CMAKE_FIND_LIBRARY_SUFFIXES ".a")
     set(BUILD_SHARED_LIBRARIES OFF)
     set(CMAKE_EXE_LINK_DYNAMIC_C_FLAGS)       # remove -Wl,-Bdynamic
@@ -76,7 +75,25 @@ if (NOT Catch2_FOUND)
     list(APPEND CMAKE_MODULE_PATH ${catch2_SOURCE_DIR}/extras)
 endif ()
 include(Catch)
-include_directories(BEFORE SYSTEM ext/sqlite)
+
+# SQLite is consumed as the official amalgamation, pinned by hash. To build
+# offline or against a local copy, pass -DFETCHCONTENT_SOURCE_DIR_SQLITE3=<dir>
+# (a directory containing sqlite3.c, sqlite3.h and shell.c).
+include(FetchContent)
+FetchContent_Declare(sqlite3
+        URL https://www.sqlite.org/2026/sqlite-amalgamation-3540100.zip
+        URL_HASH SHA3_256=92281c86e2957f9b9305890f9ac04204caa7b677cc868dc326d942689df28e30
+        DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
+FetchContent_MakeAvailable(sqlite3)
+add_library(sqlite3 STATIC ${sqlite3_SOURCE_DIR}/sqlite3.c)
+target_include_directories(sqlite3 SYSTEM PUBLIC ${sqlite3_SOURCE_DIR})
+target_link_libraries(sqlite3 PUBLIC Threads::Threads ${CMAKE_DL_LIBS})
+if (UNIX)
+    target_link_libraries(sqlite3 PUBLIC m)
+endif ()
+if (Static)
+    target_compile_definitions(sqlite3 PRIVATE SQLITE_OMIT_LOAD_EXTENSION=1)
+endif ()
 include_directories(${ZLIB_INCLUDE_DIRS} src ext)
 
 set(SOURCE_FILES
@@ -113,8 +130,7 @@ set(SOURCE_FILES
         src/ExternalIndexer.cpp
         src/ExternalIndexer.h
         src/Pipe.cpp
-        src/Pipe.h
-        ext/sqlite/sqlite3.c)
+        src/Pipe.h)
 
 set(TEST_FILES
         tests/LineFinderTest.cpp
@@ -131,7 +147,7 @@ set(TEST_FILES
         tests/LogTest.cpp)
 
 add_library(libzindex ${SOURCE_FILES})
-target_link_libraries(libzindex PUBLIC zindex_warnings Threads::Threads)
+target_link_libraries(libzindex PUBLIC zindex_warnings sqlite3 Threads::Threads)
 set_target_properties(libzindex PROPERTIES OUTPUT_NAME zindex)
 
 add_executable(zindex src/zindex.cpp)
@@ -143,8 +159,8 @@ add_executable(unit-tests ${TEST_FILES})
 target_link_libraries(unit-tests libzindex Catch2::Catch2WithMain ${ZLIB_LIBRARIES} ${COMMON_LIBS})
 
 if (BuildSqlShell)
-    add_executable(sql-shell ext/sqlite/shell.c ext/sqlite/sqlite3.c)
-    target_link_libraries(sql-shell ${COMMON_LIBS})
+    add_executable(sql-shell ${sqlite3_SOURCE_DIR}/shell.c)
+    target_link_libraries(sql-shell sqlite3 ${COMMON_LIBS})
 endif (BuildSqlShell)
 
 find_program(MEMORYCHECK_COMMAND valgrind)
