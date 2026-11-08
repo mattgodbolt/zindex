@@ -41,6 +41,7 @@ void IndexParser::parseIndex(cJSON *index, Index::Builder *builder,
     config.unique = getBoolean(index, "unique");
     config.sparse = getBoolean(index, "sparse");
     config.indexLineOffsets = getBoolean(index, "indexLineOffsets");
+    config.sparseLineOffsets = getBoolean(index, "sparseLineOffsets");
 
     if (type == "regex") {
         auto regex = getOrThrowStr(index, "regex");
