@@ -1,0 +1,11 @@
+---
+BasedOnStyle: LLVM
+IndentWidth: 4
+ContinuationIndentWidth: 8
+ColumnLimit: 80
+AccessModifierOffset: -4
+AllowShortFunctionsOnASingleLine: Inline
+AlwaysBreakTemplateDeclarations: Yes
+PointerAlignment: Right
+SortIncludes: CaseSensitive
+IncludeBlocks: Preserve
