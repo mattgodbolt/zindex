@@ -1,4 +1,5 @@
-cmake_minimum_required(VERSION 3.16)
+# 3.19 is what Catch2 v3 needs for catch_discover_tests.
+cmake_minimum_required(VERSION 3.19)
 project(zindex C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -149,4 +150,7 @@ endif (BuildSqlShell)
 
 find_program(MEMORYCHECK_COMMAND valgrind)
 enable_testing()
-catch_discover_tests(unit-tests)
+# PRE_TEST discovers at ctest time rather than running the binary straight after
+# linking, which fails for Xcode builds on Apple Silicon (the binary is not yet
+# code-signed at that point).
+catch_discover_tests(unit-tests DISCOVERY_MODE PRE_TEST)
