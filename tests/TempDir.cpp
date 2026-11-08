@@ -1,11 +1,11 @@
 #include "TempDir.h"
 
 #include <cstdlib>
-#include <iostream>
 #include <cstring>
+#include <dirent.h>
+#include <iostream>
 #include <stdexcept>
 #include <unistd.h>
-#include <dirent.h>
 
 TempDir::TempDir() {
     char templte[] = "/tmp/zindex_tmp_dir_XXXXXX";
@@ -23,9 +23,11 @@ TempDir::~TempDir() {
     }
     for (;;) {
         auto ent = readdir(dir);
-        if (!ent) break;
+        if (!ent)
+            break;
         auto tempPath = path + "/" + ent->d_name;
-        if (!strcmp(ent->d_name, "..") || !strcmp(ent->d_name, ".")) continue;
+        if (!strcmp(ent->d_name, "..") || !strcmp(ent->d_name, "."))
+            continue;
         if (unlink(tempPath.c_str()) != 0) {
             closedir(dir);
             std::cerr << "Unable to remove temp file " << tempPath << std::endl;

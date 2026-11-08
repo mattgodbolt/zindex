@@ -1,8 +1,8 @@
 #pragma once
 
+#include <regex.h>
 #include <string>
 #include <vector>
-#include <regex.h>
 
 // Wrapper over the POSIX regex library.
 // Ideally we'd use std::regex, but that's broken on GCC 4.8 (which is what
@@ -24,7 +24,7 @@ public:
     using Match = std::pair<size_t, size_t>;
     using Matches = std::vector<Match>;
     bool exec(const std::string &against, Matches &result, size_t offset = 0);
-    bool exec(const char *against, Matches &result, bool bol=true);
+    bool exec(const char *against, Matches &result, bool bol = true);
 
 private:
     void release();

@@ -1,11 +1,11 @@
-#include <stdexcept>
-#include <iostream>
-#include <signal.h>
-#include <sys/wait.h>
-#include <vector>
-#include <string.h>
 #include "ExternalIndexer.h"
 #include "IndexSink.h"
+#include <iostream>
+#include <signal.h>
+#include <stdexcept>
+#include <string.h>
+#include <sys/wait.h>
+#include <vector>
 
 namespace {
 void X(int error) {
@@ -15,7 +15,7 @@ void X(int error) {
         exit(1);
     }
 }
-}
+} // namespace
 
 void ExternalIndexer::index(IndexSink &sink, StringView line) {
     log_.debug("Writing to child...");
@@ -31,7 +31,7 @@ void ExternalIndexer::index(IndexSink &sink, StringView line) {
     }
     log_.debug("Finished writing");
     std::vector<char> buf;
-    for (; ;) {
+    for (;;) {
         auto readPos = buf.size();
         constexpr auto blockSize = 4096u;
         auto initSize = buf.size();
@@ -54,17 +54,20 @@ void ExternalIndexer::index(IndexSink &sink, StringView line) {
     auto ptr = &buf[0];
     auto end = &buf[buf.size() - 1];
     while (ptr < end) {
-        auto nextSep = static_cast<char *>(memmem(ptr, end - ptr, separator_.c_str(), separator_.size()));
-        if (!nextSep) nextSep = end;
+        auto nextSep = static_cast<char *>(
+                memmem(ptr, end - ptr, separator_.c_str(), separator_.size()));
+        if (!nextSep)
+            nextSep = end;
         auto length = nextSep - ptr;
-        if (length) sink.add(StringView(ptr, length), 0); // TODO: offset
+        if (length)
+            sink.add(StringView(ptr, length), 0); // TODO: offset
         ptr = nextSep + separator_.size();
     }
 }
 
 ExternalIndexer::ExternalIndexer(Log &log, const std::string &command,
                                  const std::string &separator)
-        : log_(log), childPid_(0), separator_(separator) {
+    : log_(log), childPid_(0), separator_(separator) {
     auto forkResult = fork();
     if (forkResult == -1) {
         log_.error("Unable to fork: ", errno);

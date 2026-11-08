@@ -6,14 +6,15 @@
 class LineSink;
 
 // Finds line boundaries within a file. File data is presented to the LineFinder
-//in blocks. Offsets are stored within the LineFinder, which means memory usage
-//proportional to the number of lines in the file. Each line found is presented
-//to the supplied LineSink.
+// in blocks. Offsets are stored within the LineFinder, which means memory usage
+// proportional to the number of lines in the file. Each line found is presented
+// to the supplied LineSink.
 class LineFinder {
     LineSink &sink_;
     std::vector<char> lineBuffer_;
     std::vector<uint64_t> lineOffsets_;
     uint64_t currentLineOffset_;
+
 public:
     explicit LineFinder(LineSink &sink);
 

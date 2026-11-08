@@ -3,10 +3,10 @@
 #include "File.h"
 
 #include <cstdint>
-#include <vector>
+#include <functional>
 #include <memory>
 #include <unordered_map>
-#include <functional>
+#include <vector>
 
 class Log;
 
@@ -38,13 +38,26 @@ public:
         bool sparse;
         bool indexLineOffsets;
 
-        IndexConfig() :
-                numeric{false}, unique{false}, sparse{false}, indexLineOffsets{false} {};
-        
-        IndexConfig withNumeric(bool b) { numeric = b; return *this; };
-        IndexConfig withUnique(bool b) { unique = b; return *this; };
-        IndexConfig withSparse(bool b) { sparse = b; return *this; };
-        IndexConfig withIndexLineOffsets(bool b) { indexLineOffsets = b; return *this; };
+        IndexConfig()
+            : numeric{false}, unique{false}, sparse{false},
+              indexLineOffsets{false} {};
+
+        IndexConfig withNumeric(bool b) {
+            numeric = b;
+            return *this;
+        };
+        IndexConfig withUnique(bool b) {
+            unique = b;
+            return *this;
+        };
+        IndexConfig withSparse(bool b) {
+            sparse = b;
+            return *this;
+        };
+        IndexConfig withIndexLineOffsets(bool b) {
+            indexLineOffsets = b;
+            return *this;
+        };
     };
 
     // Retrieve a single line by line number, calling the supplied LineSink with
@@ -113,6 +126,7 @@ public:
     class Builder {
         struct Impl;
         std::unique_ptr<Impl> impl_;
+
     public:
         // Construct a builder with the given file and index filename.
         Builder(Log &log, File &&from, const std::string &fromPath,
@@ -130,8 +144,7 @@ public:
         // indices, then this can be noted here to make the underlying SQL index
         // more efficient.
         Builder &addIndexer(const std::string &name,
-                            const std::string &creation,
-                            IndexConfig config,
+                            const std::string &creation, IndexConfig config,
                             std::unique_ptr<LineIndexer> indexer);
 
         // Build the index. Once this method's been called, the Builder should

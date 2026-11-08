@@ -12,7 +12,7 @@ struct CaptureLog : Log {
         std::string message;
 
         Record(Log::Severity severity, std::string message)
-                : severity(severity), message(message) { }
+            : severity(severity), message(message) {}
 
         friend std::ostream &operator<<(std::ostream &o, const Record &r) {
             return o << Log::name(r.severity) << " - " << r.message;

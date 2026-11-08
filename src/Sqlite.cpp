@@ -1,15 +1,13 @@
-#include <utility>
-#include <stdexcept>
-#include <iostream>
 #include "Sqlite.h"
-#include "SqliteError.h"
-#include <cstring>
 #include "Log.h"
 #include "RegExp.h"
+#include "SqliteError.h"
+#include <cstring>
+#include <iostream>
+#include <stdexcept>
+#include <utility>
 
-Sqlite::Sqlite(Log &log)
-        : log_(&log), sql_(nullptr) {
-}
+Sqlite::Sqlite(Log &log) : log_(&log), sql_(nullptr) {}
 
 Sqlite::~Sqlite() {
     close();
@@ -20,8 +18,10 @@ void Sqlite::open(const std::string &filename, bool readOnly) {
     log_->info("Opening database ", filename, " in ",
                readOnly ? "read-only" : "read-write", " mode");
     R(sqlite3_open_v2(filename.c_str(), &sql_,
-                      readOnly ? SQLITE_OPEN_READONLY :
-                      SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_URI, nullptr));
+                      readOnly ? SQLITE_OPEN_READONLY
+                               : SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE |
+                                         SQLITE_OPEN_URI,
+                      nullptr));
     R(sqlite3_extended_result_codes(sql_, true));
 }
 
@@ -42,8 +42,9 @@ void Sqlite::Statement::destroy() {
 Sqlite::Statement Sqlite::prepare(const std::string &sql) const {
     Sqlite::Statement statement(*log_);
     log_->debug("Preparing statement ", sql);
-    R(sqlite3_prepare_v2(sql_, sql.c_str(), sql.size(),
-                         &statement.statement_, nullptr), sql);
+    R(sqlite3_prepare_v2(sql_, sql.c_str(), sql.size(), &statement.statement_,
+                         nullptr),
+      sql);
     return statement;
 }
 
@@ -54,7 +55,8 @@ Sqlite::Statement::Statement(Statement &&other) {
 }
 
 Sqlite::Statement &Sqlite::Statement::operator=(Sqlite::Statement &&other) {
-    if (this == &other) return *this;
+    if (this == &other)
+        return *this;
     destroy();
     log_ = other.log_;
     statement_ = other.statement_;
@@ -69,13 +71,15 @@ Sqlite::Statement &Sqlite::Statement::reset() {
 
 bool Sqlite::Statement::step() {
     auto res = sqlite3_step(statement_);
-    if (res == SQLITE_DONE) return true;
-    if (res == SQLITE_ROW) return false;
+    if (res == SQLITE_DONE)
+        return true;
+    if (res == SQLITE_ROW)
+        return false;
     throw SqliteError(res);
 }
 
-Sqlite::Statement &Sqlite::Statement::bindBlob(
-        StringView param, const void *data, size_t length) {
+Sqlite::Statement &
+Sqlite::Statement::bindBlob(StringView param, const void *data, size_t length) {
     R(sqlite3_bind_blob(statement_, P(param), data, length, SQLITE_TRANSIENT));
     return *this;
 }
@@ -114,8 +118,8 @@ int Sqlite::Statement::P(StringView param) const {
     auto index = sqlite3_bind_parameter_index(statement_,
                                               param.c_str(asStringStorage));
     if (index == 0)
-        throw std::runtime_error(
-                "Unable to find bound parameter '" + param.str() + "'");
+        throw std::runtime_error("Unable to find bound parameter '" +
+                                 param.str() + "'");
     return index;
 }
 
@@ -158,15 +162,15 @@ std::string Sqlite::toFile(const std::string &uri) {
         return uri;
     }
     auto protocol = matches[1];
-    auto result = std::string(uri.c_str() + protocol.first, protocol.second - protocol.first);
+    auto result = std::string(uri.c_str() + protocol.first,
+                              protocol.second - protocol.first);
     if (result.find("file:") != 0) {
-        throw std::runtime_error(
-                "no uri support for '" + result+ "'");
+        throw std::runtime_error("no uri support for '" + result + "'");
     }
     auto start = protocol.second;
     if (matches.size() > 3) {
         auto slashes = matches[3];
-        start =  (slashes.second != 0) ? slashes.second : slashes.first;
+        start = (slashes.second != 0) ? slashes.second : slashes.first;
     }
     auto path = std::string(uri.c_str() + start);
     auto paramsStart = path.rfind("?");

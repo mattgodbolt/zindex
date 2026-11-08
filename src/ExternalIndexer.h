@@ -4,8 +4,8 @@
 #include "Log.h"
 #include "Pipe.h"
 
-#include <unistd.h>
 #include <string>
+#include <unistd.h>
 
 // A LineIndexer that runs an external command and pipes output to it, and
 // awaits its response.
@@ -29,5 +29,3 @@ public:
 private:
     void runChild(const std::string &command);
 };
-
-

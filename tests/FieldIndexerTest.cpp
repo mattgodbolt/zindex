@@ -1,7 +1,7 @@
 #include "FieldIndexer.h"
 
-#include <catch2/catch_test_macros.hpp>
 #include "CaptureSink.h"
+#include <catch2/catch_test_macros.hpp>
 
 using vs = std::vector<std::string>;
 
@@ -10,7 +10,7 @@ TEST_CASE("field indexes", "[FieldIndexer]") {
     SECTION("First") {
         FieldIndexer indexer(" ", 1);
         indexer.index(sink, "these are words");
-        CHECK(sink.captured == vs({ "these" }));
+        CHECK(sink.captured == vs({"these"}));
         sink.reset();
         indexer.index(sink, "");
         CHECK(sink.captured == vs());
@@ -18,12 +18,12 @@ TEST_CASE("field indexes", "[FieldIndexer]") {
     SECTION("Second") {
         FieldIndexer indexer(" ", 2);
         indexer.index(sink, "these are words");
-        CHECK(sink.captured == vs({ "are" }));
+        CHECK(sink.captured == vs({"are"}));
     }
     SECTION("Third") {
         FieldIndexer indexer(" ", 3);
         indexer.index(sink, "these are words");
-        CHECK(sink.captured == vs({ "words" }));
+        CHECK(sink.captured == vs({"words"}));
     }
     SECTION("Off the end") {
         FieldIndexer indexer(" ", 4);

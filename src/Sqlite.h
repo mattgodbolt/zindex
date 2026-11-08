@@ -3,8 +3,8 @@
 #include "StringView.h"
 
 #include <cstdint>
-#include <string>
 #include <sqlite3.h>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -21,8 +21,9 @@ public:
     Sqlite(const Sqlite &) = delete;
     Sqlite &operator=(const Sqlite &) = delete;
 
-    Sqlite(Sqlite &&other) : log_(other.log_), sql_(other.sql_)
-        { other.sql_ = nullptr; }
+    Sqlite(Sqlite &&other) : log_(other.log_), sql_(other.sql_) {
+        other.sql_ = nullptr;
+    }
 
     Sqlite &operator=(Sqlite &&other) {
         if (this != &other) {
@@ -48,11 +49,9 @@ public:
         friend class Sqlite;
 
     public:
-        Statement(Log &log) : log_(&log), statement_(nullptr) { }
+        Statement(Log &log) : log_(&log), statement_(nullptr) {}
 
-        ~Statement() {
-            destroy();
-        }
+        ~Statement() { destroy(); }
 
         Statement(const Statement &) = delete;
         Statement &operator=(const Statement &) = delete;
@@ -61,8 +60,7 @@ public:
 
         Statement &reset();
         Statement &bindInt64(StringView param, int64_t data);
-        Statement &bindBlob(StringView param, const void *data,
-                            size_t length);
+        Statement &bindBlob(StringView param, const void *data, size_t length);
         Statement &bindString(StringView param, StringView string);
 
         bool step();

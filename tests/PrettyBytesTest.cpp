@@ -3,11 +3,12 @@
 #include <catch2/catch_test_macros.hpp>
 #include <sstream>
 
-#define STR(XX) ([&]() ->std::string { \
-    std::stringstream STR__STREAM; \
-    STR__STREAM << XX; \
-    return STR__STREAM.str(); \
-})()
+#define STR(XX)                                                                \
+    ([&]() -> std::string {                                                    \
+        std::stringstream STR__STREAM;                                         \
+        STR__STREAM << XX;                                                     \
+        return STR__STREAM.str();                                              \
+    })()
 
 TEST_CASE("pretty bytes", "[PrettyBytes]") {
     CHECK(STR(PrettyBytes(0)) == "0 bytes");

@@ -1,8 +1,8 @@
 #pragma once
 
+#include "StringView.h"
 #include <cstddef>
 #include <string>
-#include "StringView.h"
 
 class IndexSink;
 

@@ -2,10 +2,10 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include <iostream>
-#include <vector>
-#include <utility>
 #include "CaptureLog.h"
+#include <iostream>
+#include <utility>
+#include <vector>
 
 namespace {
 
@@ -18,7 +18,7 @@ struct StreamNoticer {
     }
 };
 
-}
+} // namespace
 
 TEST_CASE("formats strings", "[Log]") {
     REQUIRE(Log::format() == "");
@@ -36,8 +36,8 @@ TEST_CASE("captures logs", "[Log]") {
         log.info("info");
         log.warn("warn");
         log.error("error");
-        CHECK(log.records == CaptureLog::Records({ D("debug"), I("info"),
-                                                   W("warn"), E("error") }));
+        CHECK(log.records == CaptureLog::Records({D("debug"), I("info"),
+                                                  W("warn"), E("error")}));
     }
     SECTION("min level info") {
         log.minSeverity_ = Log::Severity::Info;
@@ -46,7 +46,7 @@ TEST_CASE("captures logs", "[Log]") {
         log.warn("warn");
         log.error("error");
         CHECK(log.records ==
-              CaptureLog::Records({ I("info"), W("warn"), E("error") }));
+              CaptureLog::Records({I("info"), W("warn"), E("error")}));
     }
     SECTION("min level warn") {
         log.minSeverity_ = Log::Severity::Warning;
@@ -54,7 +54,7 @@ TEST_CASE("captures logs", "[Log]") {
         log.info("info");
         log.warn("warn");
         log.error("error");
-        CHECK(log.records == CaptureLog::Records({ W("warn"), E("error") }));
+        CHECK(log.records == CaptureLog::Records({W("warn"), E("error")}));
     }
     SECTION("min level error") {
         log.minSeverity_ = Log::Severity::Error;
@@ -62,7 +62,7 @@ TEST_CASE("captures logs", "[Log]") {
         log.info("info");
         log.warn("warn");
         log.error("error");
-        CHECK(log.records == CaptureLog::Records({ E("error") }));
+        CHECK(log.records == CaptureLog::Records({E("error")}));
     }
 }
 
@@ -78,7 +78,6 @@ TEST_CASE("doesn't unnecessarily format if disabled", "[Log]") {
     CHECK(infoNoticer.numStreams == 0);
     CHECK(warnNoticer.numStreams == 1);
     CHECK(errNoticer.numStreams == 1);
-    CHECK(log.records == CaptureLog::Records(
-            { W("This should: [stream]"), E("As should this: [stream]") }));
-
+    CHECK(log.records == CaptureLog::Records({W("This should: [stream]"),
+                                              E("As should this: [stream]")}));
 }

@@ -1,8 +1,8 @@
-#include <fstream>
 #include "RegExpIndexer.h"
+#include <fstream>
 
-#include <catch2/catch_test_macros.hpp>
 #include "CaptureSink.h"
+#include <catch2/catch_test_macros.hpp>
 
 using vs = std::vector<std::string>;
 
@@ -11,7 +11,7 @@ TEST_CASE("indexes", "[RegExpIndexer]") {
         RegExpIndexer words("\\w+");
         CaptureSink sink;
         words.index(sink, "these are words");
-        CHECK(sink.captured == vs({ "these", "are", "words" }));
+        CHECK(sink.captured == vs({"these", "are", "words"}));
     }
     SECTION("matches only one if anchored") {
         RegExpIndexer firstWord("^\\w+");
@@ -25,12 +25,12 @@ TEST_CASE("indexes", "[RegExpIndexer]") {
         CaptureSink sink;
         singleChar.index(sink, "0123456789");
         CHECK(sink.captured ==
-              vs({ "0", "1", "2", "3", "4", "5", "6", "7", "8", "9" }));
+              vs({"0", "1", "2", "3", "4", "5", "6", "7", "8", "9"}));
     }
     SECTION("multiple capture groups - matches specified group") {
         RegExpIndexer multipleCaptureGroups("(New|Update)\\|([^|]+)", 2);
         CaptureSink sink;
         multipleCaptureGroups.index(sink, "New|2-id|0");
-        CHECK(sink.captured == vs({ "2-id" }));
+        CHECK(sink.captured == vs({"2-id"}));
     }
 }

@@ -3,12 +3,13 @@
 // RAII wrapper over an anonymous pipe.
 class Pipe {
     int pipeFds_[2];
+
 public:
     // Constructs a new anonymous pipe.
     Pipe();
     ~Pipe();
 
-    // Close the read side of the pipe.
+    //  Close the read side of the pipe.
     void closeRead();
     // Close the write side of the pipe.
     void closeWrite();
@@ -28,5 +29,3 @@ public:
 private:
     void destroy();
 };
-
-
