@@ -2,10 +2,21 @@
 #include <regex.h>
 #include <stdexcept>
 
+namespace {
+// glibc understands \w, \d and friends in extended regexes, but macOS only
+// does so when asked for "enhanced" mode. Ask, so that the same regex means
+// the same thing on both.
+#ifdef REG_ENHANCED
+constexpr int PlatformRegFlags = REG_ENHANCED;
+#else
+constexpr int PlatformRegFlags = 0;
+#endif
+} // namespace
+
 RegExp::RegExp(const std::string &regex) : RegExp(regex.c_str()) {}
 
 RegExp::RegExp(const char *regex) {
-    R(regcomp(&re_, regex, REG_EXTENDED), regex);
+    R(regcomp(&re_, regex, REG_EXTENDED | PlatformRegFlags), regex);
     owned_ = true;
 }
 
