@@ -11,6 +11,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <unordered_map>
+#include <utility>
 
 using namespace std;
 
@@ -51,7 +52,7 @@ TEST_CASE("indexes files", "[Index]") {
         builder.addIndexer(
                        "default", "blah",
                        Index::IndexConfig().withNumeric(true).withUnique(true),
-                       move(indexer))
+                       std::move(indexer))
                 .indexEvery(256 * 1024)
                 .build();
         Index index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
@@ -91,7 +92,7 @@ TEST_CASE("indexes files", "[Index]") {
                                         Index::IndexConfig()
                                                 .withNumeric(true)
                                                 .withUnique(true),
-                                        move(indexer))
+                                        std::move(indexer))
                              .indexEvery(256 * 1024)
                              .build());
     }
@@ -102,7 +103,7 @@ TEST_CASE("indexes files", "[Index]") {
         unique_ptr<LineIndexer> indexer(new RegExpIndexer("Mod ([0-9]+)"));
         builder.addIndexer("default", "blah",
                            Index::IndexConfig().withNumeric(true),
-                           move(indexer))
+                           std::move(indexer))
                 .indexEvery(256 * 1024)
                 .build();
         Index index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
@@ -135,7 +136,8 @@ TEST_CASE("indexes files", "[Index]") {
                                testFile, testFile + ".zindex");
         unique_ptr<LineIndexer> indexer(new RegExpIndexer("Hex ([0-9a-f]+)"));
         builder.addIndexer("default", "blah",
-                           Index::IndexConfig().withUnique(true), move(indexer))
+                           Index::IndexConfig().withUnique(true),
+                           std::move(indexer))
                 .indexEvery(256 * 1024)
                 .build();
         Index index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
@@ -161,7 +163,7 @@ TEST_CASE("indexes files", "[Index]") {
                                testFile, testFile + ".zindex");
         unique_ptr<LineIndexer> indexer(new RegExpIndexer("\\w+"));
         builder.addIndexer("default", "blah", Index::IndexConfig(),
-                           move(indexer))
+                           std::move(indexer))
                 .indexEvery(256 * 1024)
                 .build();
         Index index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
@@ -188,7 +190,7 @@ TEST_CASE("indexes files", "[Index]") {
         unique_ptr<LineIndexer> indexer(new FieldIndexer(" ", 2));
         builder.addIndexer("default", "blah",
                            Index::IndexConfig().withNumeric(true),
-                           move(indexer))
+                           std::move(indexer))
                 .indexEvery(256 * 1024)
                 .build();
         Index index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
@@ -242,7 +244,7 @@ TEST_CASE("indexes concatenated files", "[Index]") {
     unique_ptr<LineIndexer> indexer(new RegExpIndexer("^Line ([0-9]+)"));
     builder.addIndexer("default", "blah",
                        Index::IndexConfig().withNumeric(true).withUnique(true),
-                       move(indexer))
+                       std::move(indexer))
             .indexEvery(256 * 1024)
             .build();
     Index index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
@@ -296,7 +298,7 @@ TEST_CASE("sparsely indexes files", "[Index]") {
                                testFile, testFile + ".zindex");
         unique_ptr<LineIndexer> indexer(new RegExpIndexer("Line ([^-]+) "));
         builder.addIndexer("default", "blah", Index::IndexConfig(),
-                           move(indexer))
+                           std::move(indexer))
                 .indexEvery(256 * 1024)
                 .build();
         Index index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
@@ -331,7 +333,8 @@ TEST_CASE("metadata tests", "[Index]") {
     Index::Builder builder(log, File(fopen(testFile.c_str(), "rb")), testFile,
                            testFile + ".zindex");
     unique_ptr<LineIndexer> indexer(new RegExpIndexer("\\w+"));
-    builder.addIndexer("default", "blah", Index::IndexConfig(), move(indexer))
+    builder.addIndexer("default", "blah", Index::IndexConfig(),
+                       std::move(indexer))
             .build();
     SECTION("loads metadata") {
         Index index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
