@@ -49,6 +49,8 @@ void LineFinder::lineData(const uint8_t *begin, const uint8_t *end) {
 void LineFinder::append(const uint8_t *begin, const uint8_t *end) {
     // Was: std::copy(begin, end, std::back_inserter(lineBuffer_));
     // but it turns out that's pretty slow... so let's do this instead:
+    // An empty range may carry a null pointer, which memcpy forbids.
+    if (begin == end) return;
     auto offset = lineBuffer_.size();
     auto size = end - begin;
     lineBuffer_.resize(offset + size);

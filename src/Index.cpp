@@ -433,7 +433,12 @@ WHERE key = :query
                     if (skipping)
                         throw std::runtime_error(
                                 "Tried to cross a gzip stream boundary");
+                    // `zs` refers into `context`, so decide whether we have the
+                    // whole line before we destroy it.
+                    const bool haveWholeLine = zs.stream.avail_out == 0;
                     context.reset();
+                    if (!haveWholeLine) throw ZlibError(Z_DATA_ERROR);
+                    break;
                 }
             } while (zs.stream.avail_out);
         } while (skipping);
