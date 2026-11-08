@@ -1,16 +1,23 @@
-cmake_minimum_required(VERSION 2.8.4)
-project(zindex)
+cmake_minimum_required(VERSION 3.16)
+project(zindex C CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+set(THREADS_PREFER_PTHREAD_FLAG ON)
+find_package(Threads REQUIRED)
 
 if (APPLE AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -stdlib=libc++ -Wall -Werror -Wextra")
-else ()
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -pthread -Wall -Werror -Wextra")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
 endif ()
 
-if (APPLE AND CMAKE_C_COMPILER_ID MATCHES "Clang")
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra")
-else ()
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -pthread -Wall -Wextra")
+# Warnings apply to our own C++ code only, never to the vendored C sources. -Werror is opt-in so that new compilers' new warnings
+# don't break builds for people just trying to install the tool.
+option(WarningsAsErrors "Treat warnings in zindex's own code as errors" OFF)
+add_library(zindex_warnings INTERFACE)
+target_compile_options(zindex_warnings INTERFACE $<$<COMPILE_LANGUAGE:CXX>:-Wall -Wextra>)
+if (WarningsAsErrors)
+    target_compile_options(zindex_warnings INTERFACE $<$<COMPILE_LANGUAGE:CXX>:-Werror>)
 endif ()
 
 option(UseLTO "Use link-time optimization" OFF)
@@ -36,7 +43,7 @@ if (UseLTO)
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fuse-linker-plugin")
 endif (UseLTO)
 
-set(COMMON_LIBS "")
+set(COMMON_LIBS Threads::Threads)
 if (Static)
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static -static-libgcc -static-libstdc++")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DSQLITE_OMIT_LOAD_EXTENSION=1")
@@ -45,7 +52,7 @@ if (Static)
     set(CMAKE_EXE_LINK_DYNAMIC_C_FLAGS)       # remove -Wl,-Bdynamic
     set(CMAKE_EXE_LINK_DYNAMIC_CXX_FLAGS)
 else (Static)
-    set(COMMON_LIBS "dl")
+    list(APPEND COMMON_LIBS ${CMAKE_DL_LIBS})
 endif (Static)
 
 if (ArchNative)
@@ -113,6 +120,7 @@ set(TEST_FILES
         tests/LogTest.cpp)
 
 add_library(libzindex ${SOURCE_FILES})
+target_link_libraries(libzindex PUBLIC zindex_warnings Threads::Threads)
 set_target_properties(libzindex PROPERTIES OUTPUT_NAME zindex)
 
 add_executable(zindex src/zindex.cpp)

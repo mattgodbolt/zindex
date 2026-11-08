@@ -63,7 +63,7 @@ $ zq file.gz --line 1 1000
 
 ## Building from source
 
-`zindex` uses CMake for its basic building (though has a bootstrapping `Makefile`), and requires a C++11 compatible compiler (GCC 4.8 or above and clang 3.4 and above). It also requires `zlib`. With the relevant compiler available, building ought to be as simple as:
+`zindex` uses CMake for its basic building (though has a bootstrapping `Makefile`), and requires CMake 3.16 or later and a C++17 compatible compiler (GCC 8 or above, clang 7 or above). It also requires `zlib`. With the relevant compiler available, building ought to be as simple as:
 
 ```bash
 $ git clone https://github.com/mattgodbolt/zindex.git
