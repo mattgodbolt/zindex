@@ -2,7 +2,7 @@
 #include <stdexcept>
 #include "RegExp.h"
 
-#include "catch.hpp"
+#include <catch2/catch_test_macros.hpp>
 
 TEST_CASE("constructs regexes", "[RegExp]") {
     RegExp r1("");

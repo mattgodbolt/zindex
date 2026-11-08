@@ -63,6 +63,19 @@ endif (ArchNative)
 include(CTest)
 
 find_package(ZLIB REQUIRED)
+
+# Prefer a system-provided Catch2 (e.g. from a distro package), falling back to
+# fetching a pinned release so a plain checkout still builds out of the box.
+find_package(Catch2 3 QUIET)
+if (NOT Catch2_FOUND)
+    include(FetchContent)
+    FetchContent_Declare(Catch2
+            GIT_REPOSITORY https://github.com/catchorg/Catch2.git
+            GIT_TAG v3.16.1)
+    FetchContent_MakeAvailable(Catch2)
+    list(APPEND CMAKE_MODULE_PATH ${catch2_SOURCE_DIR}/extras)
+endif ()
+include(Catch)
 include_directories(BEFORE SYSTEM ext/sqlite)
 include_directories(${ZLIB_INCLUDE_DIRS} src ext)
 
@@ -104,9 +117,7 @@ set(SOURCE_FILES
         ext/sqlite/sqlite3.c)
 
 set(TEST_FILES
-        tests/catch.hpp
         tests/LineFinderTest.cpp
-        tests/test_main.cpp
         tests/SqliteTest.cpp
         tests/RegExpTest.cpp
         tests/RegExpIndexerTest.cpp
@@ -129,7 +140,7 @@ add_executable(zq src/zq.cpp)
 target_link_libraries(zq libzindex ${ZLIB_LIBRARIES} ${COMMON_LIBS})
 
 add_executable(unit-tests ${TEST_FILES})
-target_link_libraries(unit-tests libzindex ${ZLIB_LIBRARIES} ${COMMON_LIBS})
+target_link_libraries(unit-tests libzindex Catch2::Catch2WithMain ${ZLIB_LIBRARIES} ${COMMON_LIBS})
 
 if (BuildSqlShell)
     add_executable(sql-shell ext/sqlite/shell.c ext/sqlite/sqlite3.c)
@@ -138,5 +149,4 @@ endif (BuildSqlShell)
 
 find_program(MEMORYCHECK_COMMAND valgrind)
 enable_testing()
-add_test(NAME unit-tests
-        COMMAND unit-tests)
+catch_discover_tests(unit-tests)

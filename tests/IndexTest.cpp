@@ -2,7 +2,7 @@
 #include "RegExpIndexer.h"
 #include "Index.h"
 
-#include "catch.hpp"
+#include <catch2/catch_test_macros.hpp>
 #include "TempDir.h"
 #include "LineSink.h"
 #include "CaptureLog.h"

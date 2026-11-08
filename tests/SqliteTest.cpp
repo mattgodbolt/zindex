@@ -1,6 +1,6 @@
 #include "Sqlite.h"
 
-#include "catch.hpp"
+#include <catch2/catch_test_macros.hpp>
 
 #include <string>
 #include <vector>
@@ -153,6 +153,15 @@ TEST_CASE("handles binds and blobs uri", "[Sqlite]") {
     REQUIRE(blob2.size() == byteLen);
     for (int i = 0; i < byteLen; ++i) REQUIRE(blob2[i] == (0xff ^ (i & 0xff)));
     CHECK(select.step() == true);
+}
+
+TEST_CASE("plain paths pass through uri conversion unchanged", "[Sqlite]") {
+    CaptureLog log;
+    Sqlite sqlite(log);
+    // Regression test for https://github.com/mattgodbolt/zindex/issues/52
+    REQUIRE(sqlite.toFile("data.db") == "data.db");
+    REQUIRE(sqlite.toFile("/home/fred/data.db") == "/home/fred/data.db");
+    REQUIRE(sqlite.toFile("relative/dir/data.db") == "relative/dir/data.db");
 }
 
 TEST_CASE("uri convert to file", "[Sqlite]") {
