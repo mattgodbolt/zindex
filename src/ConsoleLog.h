@@ -7,8 +7,10 @@
 class ConsoleLog : public Log {
     bool ansiColour_;
     bool logWarningsToInfo_;
+
 public:
-    ConsoleLog(Log::Severity logLevel, bool forceColour, bool logWarningsToInfo);
+    ConsoleLog(Log::Severity logLevel, bool forceColour,
+               bool logWarningsToInfo);
 
     void log(Severity severity, const std::string &message) override;
 };

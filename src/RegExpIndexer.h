@@ -1,9 +1,9 @@
 #pragma once
 
-#include "Sqlite.h"
-#include "RegExp.h"
-#include "LineIndexer.h"
 #include "IndexSink.h"
+#include "LineIndexer.h"
+#include "RegExp.h"
+#include "Sqlite.h"
 
 // A LineIndexer that uses the capture group of a regular expression to provide
 // indices to an IndexSink.

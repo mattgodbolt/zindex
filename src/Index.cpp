@@ -1,27 +1,27 @@
 #include "Index.h"
 
 #include "LineFinder.h"
-#include "LineSink.h"
 #include "LineIndexer.h"
+#include "LineSink.h"
 #include "Sqlite.h"
 
 #include <zlib.h>
 
+#include "IndexSink.h"
+#include "Log.h"
+#include "PrettyBytes.h"
+#include "StringView.h"
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
 #include <iostream>
 #include <stdexcept>
-#include <tuple>
-#include <vector>
-#include <unordered_map>
-#include "IndexSink.h"
-#include "Log.h"
-#include "StringView.h"
-#include "PrettyBytes.h"
-#include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/types.h>
+#include <tuple>
 #include <unistd.h>
+#include <unordered_map>
+#include <vector>
 
 namespace {
 
@@ -37,13 +37,14 @@ void seek(File &f, uint64_t pos) {
 }
 
 struct ZlibError : std::runtime_error {
-    explicit ZlibError(int result) :
-            std::runtime_error(
-                    std::string("Error from zlib : ") + zError(result)) {}
+    explicit ZlibError(int result)
+        : std::runtime_error(std::string("Error from zlib : ") +
+                             zError(result)) {}
 };
 
 void X(int zlibErr) {
-    if (zlibErr != Z_OK) throw ZlibError(zlibErr);
+    if (zlibErr != Z_OK)
+        throw ZlibError(zlibErr);
 }
 
 struct Progress {
@@ -53,19 +54,18 @@ struct Progress {
 
     Progress(Log &log) : log(log) {}
 
-    template<typename Printer>
+    template <typename Printer>
     void update(size_t progress, size_t of) {
         auto now = time(nullptr);
-        if (now < nextProgress) return;
+        if (now < nextProgress)
+            return;
         char pc[16];
-        snprintf(pc, sizeof(pc) - 1, "%.2f",
-                 (progress * 100.0) / of);
-        log.info("Progress: ", Printer(progress), " of ",
-                 Printer(of), " (", pc, "%)");
+        snprintf(pc, sizeof(pc) - 1, "%.2f", (progress * 100.0) / of);
+        log.info("Progress: ", Printer(progress), " of ", Printer(of), " (", pc,
+                 "%)");
         nextProgress = now + LogProgressEverySecs;
     }
 };
-
 
 struct OneLineSink : LineSink {
     bool complete = false;
@@ -74,12 +74,13 @@ struct OneLineSink : LineSink {
     size_t lastLineNum = 0;
     LineSink &delegate;
 
-    OneLineSink(size_t lineNumToFind, size_t startingLineNum, LineSink &delegate) : lineNumToFind(lineNumToFind), startingLineNum(startingLineNum), delegate(delegate) {}
+    OneLineSink(size_t lineNumToFind, size_t startingLineNum,
+                LineSink &delegate)
+        : lineNumToFind(lineNumToFind), startingLineNum(startingLineNum),
+          delegate(delegate) {}
 
-    bool onLine(
-            size_t lineNumber,
-            size_t fileOffset,
-            const char *line, size_t length) override {
+    bool onLine(size_t lineNumber, size_t fileOffset, const char *line,
+                size_t length) override {
         lastLineNum = startingLineNum + lineNumber;
         if (lineNumToFind == lastLineNum) {
             delegate.onLine(lineNumber, fileOffset, line, length);
@@ -88,19 +89,20 @@ struct OneLineSink : LineSink {
 
         return true;
     }
-    
 };
 
 struct DelegatinhPrintSink : LineSink {
     bool enabled;
     LineSink &sink;
-    DelegatinhPrintSink(bool enabled, LineSink &sink) : enabled(enabled), sink(sink) { }
+    DelegatinhPrintSink(bool enabled, LineSink &sink)
+        : enabled(enabled), sink(sink) {}
 
-    bool onLine(size_t l, size_t size, const char *line, size_t length) override {
+    bool onLine(size_t l, size_t size, const char *line,
+                size_t length) override {
         if (enabled) {
             std::cout << l << ":" << std::string(line, length) << std::endl;
         }
-        
+
         return sink.onLine(l, size, line, length);
     }
 };
@@ -129,7 +131,8 @@ void uncompress(const std::vector<uint8_t> &compressed, uint8_t *to,
 struct ZStream {
     z_stream stream;
     enum class Type : int {
-        ZlibOrGzip = 47, Raw = -15,
+        ZlibOrGzip = 47,
+        Raw = -15,
     };
 
     explicit ZStream(Type type) {
@@ -137,13 +140,9 @@ struct ZStream {
         X(inflateInit2(&stream, (int)type));
     }
 
-    void reset() {
-        X(inflateReset(&stream));
-    }
+    void reset() { X(inflateReset(&stream)); }
 
-    ~ZStream() {
-        (void)inflateEnd(&stream);
-    }
+    ~ZStream() { (void)inflateEnd(&stream); }
 
     ZStream(ZStream &) = delete;
 
@@ -156,8 +155,8 @@ struct IndexHandler : IndexSink {
     uint64_t currentLine;
     bool indexed = false;
 
-    IndexHandler(Log &log, std::unique_ptr<LineIndexer> indexer) :
-            log(log), indexer(std::move(indexer)), currentLine(0) {}
+    IndexHandler(Log &log, std::unique_ptr<LineIndexer> indexer)
+        : log(log), indexer(std::move(indexer)), currentLine(0) {}
 
     ~IndexHandler() override = default;
 
@@ -171,9 +170,8 @@ struct IndexHandler : IndexSink {
             return indexed;
         } catch (const std::exception &e) {
             throw std::runtime_error(
-                    "Failed to index line " + std::to_string(currentLine)
-                    + ": '" + std::string(line, length) +
-                    "' - " + e.what());
+                    "Failed to index line " + std::to_string(currentLine) +
+                    ": '" + std::string(line, length) + "' - " + e.what());
         }
     }
 };
@@ -183,14 +181,12 @@ struct AlphaHandler : IndexHandler {
 
     AlphaHandler(Log &log, std::unique_ptr<LineIndexer> indexer,
                  Sqlite::Statement &&insert)
-            : IndexHandler(log, std::move(indexer)),
-              insert(std::move(insert)) {}
+        : IndexHandler(log, std::move(indexer)), insert(std::move(insert)) {}
 
     void add(StringView key, size_t offset) override {
         indexed = true;
         log.debug("Found key '", key, "'");
-        insert
-                .reset()
+        insert.reset()
                 .bindString(":key", key)
                 .bindInt64(":line", currentLine)
                 .bindInt64(":offset", offset)
@@ -203,8 +199,7 @@ struct NumericHandler : IndexHandler {
 
     NumericHandler(Log &log, std::unique_ptr<LineIndexer> indexer,
                    Sqlite::Statement &&insert)
-            : IndexHandler(log, std::move(indexer)),
-              insert(std::move(insert)) {}
+        : IndexHandler(log, std::move(indexer)), insert(std::move(insert)) {}
 
     void add(StringView key, size_t offset) override {
         indexed = true;
@@ -224,17 +219,17 @@ struct NumericHandler : IndexHandler {
         while (indexLength) {
             val *= 10;
             if (*index < '0' || *index > '9')
-                throw std::invalid_argument("Non-numeric: '"
-                                            + std::string(initIndex, initLen) +
+                throw std::invalid_argument("Non-numeric: '" +
+                                            std::string(initIndex, initLen) +
                                             "'");
             val += *index - '0';
             index++;
             indexLength--;
         }
-        if (negative) val = -val;
+        if (negative)
+            val = -val;
         log.debug("Found key ", val);
-        insert
-                .reset()
+        insert.reset()
                 .bindInt64(":key", val)
                 .bindInt64(":line", currentLine)
                 .bindInt64(":offset", offset)
@@ -249,18 +244,18 @@ struct CachedContext {
     ZStream zs_;
 
     explicit CachedContext(size_t uncompressedOffset, size_t blockSize)
-            : uncompressedOffset_(uncompressedOffset),
-              blockSize_(blockSize),
-              zs_(ZStream::Type::Raw) {}
+        : uncompressedOffset_(uncompressedOffset), blockSize_(blockSize),
+          zs_(ZStream::Type::Raw) {}
 
     bool offsetWithinRange(size_t offset) const {
-        if (offset < uncompressedOffset_) return false; // can't seek backwards
+        if (offset < uncompressedOffset_)
+            return false; // can't seek backwards
         size_t jumpAhead = offset - uncompressedOffset_;
         return jumpAhead < blockSize_;
     }
 };
 
-}
+} // namespace
 
 struct Index::Impl {
     Log &log_;
@@ -274,34 +269,35 @@ struct Index::Impl {
     bool sparseLineOffsets_;
 
     Impl(Log &log, File &&fromCompressed, Sqlite &&db)
-            : log_(log), compressed_(std::move(fromCompressed)),
-              db_(std::move(db)),
-              lineQuery_(db_.prepare(R"(
+        : log_(log), compressed_(std::move(fromCompressed)), db_(std::move(db)),
+          lineQuery_(db_.prepare(R"(
 SELECT lo.line, lo.offset, ap.compressedOffset, ap.uncompressedOffset, lo.length, ap.bitOffset, ap.window, ap.lineNum
 FROM LineOffsets lo, AccessPoints ap
 WHERE lo.offset >= ap.uncompressedOffset AND offset <= ap.uncompressedEndOffset
 AND lo.line = :line
-LIMIT 1)")), 
-            sparseLineOffsetsQuery_(db_.prepare(R"(
+LIMIT 1)")),
+          sparseLineOffsetsQuery_(db_.prepare(R"(
 SELECT lineNum, compressedOffset, uncompressedOffset, bitOffset, window
 FROM AccessPoints where lineNum <= :line order by lineNum desc
 LIMIT 1)")) {
         try {
             auto queryMeta = db_.prepare("SELECT key, value FROM Metadata");
             for (;;) {
-                if (queryMeta.step()) break;
+                if (queryMeta.step())
+                    break;
                 auto key = queryMeta.columnString(0);
                 auto value = queryMeta.columnString(1);
                 log_.debug("Metadata: ", key, " = ", value);
                 metadata_.emplace(key, value);
-                
             }
         } catch (const std::exception &e) {
             log.warn("Caught exception reading metadata: ", e.what());
         }
-        
-        sparseLineOffsets_ = metadata_.find("sparseLineOffsets") != metadata_.end() && metadata_.at("sparseLineOffsets") == "1";
-    
+
+        sparseLineOffsets_ =
+                metadata_.find("sparseLineOffsets") != metadata_.end() &&
+                metadata_.at("sparseLineOffsets") == "1";
+
         auto stmt = db_.prepare(
                 "SELECT MAX(uncompressedEndOffset)/COUNT(*) FROM AccessPoints");
         if (stmt.step()) {
@@ -321,29 +317,27 @@ LIMIT 1)")) {
         auto timeStr = std::to_string(stats.st_mtime);
         log_.debug("Opened compressed file of size ", sizeStr, " mtime ",
                    timeStr);
-        if (metadata_.find("compressedSize") != metadata_.end()
-            && sizeStr != metadata_.at("compressedSize")) {
+        if (metadata_.find("compressedSize") != metadata_.end() &&
+            sizeStr != metadata_.at("compressedSize")) {
             if (force) {
                 log_.warn("Expected compressed size mismatched, "
-                                  "continuing anyway (", stats.st_size,
-                          " vs expected ",
+                          "continuing anyway (",
+                          stats.st_size, " vs expected ",
                           metadata_.at("compressedSize"), ")");
             } else {
                 throw std::runtime_error(
                         "Compressed size changed since index was built");
             }
         }
-        if (metadata_.find("compressedModTime") != metadata_.end()
-            && timeStr != metadata_.at("compressedModTime")) {
+        if (metadata_.find("compressedModTime") != metadata_.end() &&
+            timeStr != metadata_.at("compressedModTime")) {
             if (force) {
                 log_.warn("Expected compressed timestamp, continuing anyway");
             } else {
-                throw std::runtime_error(
-                        "Compressed file has been modified since index was built");
+                throw std::runtime_error("Compressed file has been modified "
+                                         "since index was built");
             }
         }
-
-       
     }
 
     bool getLine(uint64_t line, LineSink &sink) {
@@ -352,23 +346,27 @@ LIMIT 1)")) {
         auto noResults = lineQuery_.step();
         if (noResults) {
             if (sparseLineOffsets_) {
-                
+
                 sparseLineOffsetsQuery_.reset();
                 sparseLineOffsetsQuery_.bindInt64(":line", line);
                 if (sparseLineOffsetsQuery_.step()) {
                     return false;
-                }                
-                auto lineNum = static_cast<size_t>(sparseLineOffsetsQuery_.columnInt64(0));
-                auto compressedOffset = static_cast<size_t>(sparseLineOffsetsQuery_.columnInt64(1));
-                auto uncompressedOffset = static_cast<size_t>(sparseLineOffsetsQuery_.columnInt64(2));
-                auto bitOffset = static_cast<int>(sparseLineOffsetsQuery_.columnInt64(3));
+                }
+                auto lineNum = static_cast<size_t>(
+                        sparseLineOffsetsQuery_.columnInt64(0));
+                auto compressedOffset = static_cast<size_t>(
+                        sparseLineOffsetsQuery_.columnInt64(1));
+                auto uncompressedOffset = static_cast<size_t>(
+                        sparseLineOffsetsQuery_.columnInt64(2));
+                auto bitOffset = static_cast<int>(
+                        sparseLineOffsetsQuery_.columnInt64(3));
                 auto windowData = sparseLineOffsetsQuery_.columnBlob(4);
-                print(lineNum, line, 0, compressedOffset, uncompressedOffset, bitOffset, 0, windowData, sink);
+                print(lineNum, line, 0, compressedOffset, uncompressedOffset,
+                      bitOffset, 0, windowData, sink);
                 return true;
             }
             return false;
         }
-        
 
         print(lineQuery_, sink);
         return true;
@@ -377,13 +375,15 @@ LIMIT 1)")) {
     size_t queryIndex(const std::string &index, const std::string &query,
                       LineFunction lineFunc) {
         auto stmt = db_.prepare(R"(
-SELECT line FROM index_)" + index + R"(
+SELECT line FROM index_)" + index +
+                                R"(
 WHERE key = :query
 )");
         stmt.bindString(":query", query);
         size_t matches = 0;
         for (;;) {
-            if (stmt.step()) return matches;
+            if (stmt.step())
+                return matches;
             lineFunc(stmt.columnInt64(0));
             ++matches;
         }
@@ -393,7 +393,8 @@ WHERE key = :query
         auto stmt = db_.prepare(customQuery);
         size_t matches = 0;
         for (;;) {
-            if (stmt.step()) return matches;
+            if (stmt.step())
+                return matches;
             lineFunc(stmt.columnInt64(0));
             ++matches;
         }
@@ -406,7 +407,8 @@ WHERE key = :query
 
     size_t tableSize(const std::string &name) const {
         auto stmt = db_.prepare("SELECT COUNT(*) FROM " + name);
-        if (stmt.step()) return 0;
+        if (stmt.step())
+            return 0;
         return static_cast<size_t>(stmt.columnInt64(0));
     }
 
@@ -418,10 +420,14 @@ WHERE key = :query
         auto bitOffset = static_cast<int>(q.columnInt64(5));
         auto length = q.columnInt64(4);
         auto windowData = q.columnBlob(6);
-        print(0, line, offset, compressedOffset, uncompressedOffset, bitOffset, length, windowData, sink);
+        print(0, line, offset, compressedOffset, uncompressedOffset, bitOffset,
+              length, windowData, sink);
     }
 
-    std::unique_ptr<CachedContext> resetContext(size_t offset, size_t compressedOffset, size_t uncompressedOffset, int bitOffset, const std::vector<uint8_t> windowData) {
+    std::unique_ptr<CachedContext>
+    resetContext(size_t offset, size_t compressedOffset,
+                 size_t uncompressedOffset, int bitOffset,
+                 const std::vector<uint8_t> windowData) {
         std::unique_ptr<CachedContext> context;
         if (cachedContext_ && cachedContext_->offsetWithinRange(offset)) {
             // We can reuse the previous context.
@@ -434,33 +440,38 @@ WHERE key = :query
             uint8_t window[WindowSize];
             uncompress(windowData, window, WindowSize);
 
-            seek(compressed_, bitOffset ? compressedOffset - 1
-                                        : compressedOffset);
+            seek(compressed_,
+                 bitOffset ? compressedOffset - 1 : compressedOffset);
             context->zs_.stream.avail_in = 0;
             if (bitOffset) {
                 auto c = fgetc(compressed_.get());
                 if (c == -1)
-                    throw ZlibError(ferror(compressed_.get()) ?
-                                    Z_ERRNO : Z_DATA_ERROR);
-                X(inflatePrime(&context->zs_.stream,
-                               bitOffset, c >> (8 - bitOffset)));
+                    throw ZlibError(ferror(compressed_.get()) ? Z_ERRNO
+                                                              : Z_DATA_ERROR);
+                X(inflatePrime(&context->zs_.stream, bitOffset,
+                               c >> (8 - bitOffset)));
             }
-            X(inflateSetDictionary(&context->zs_.stream,
-                                   &window[0], WindowSize));
+            X(inflateSetDictionary(&context->zs_.stream, &window[0],
+                                   WindowSize));
         }
         return context;
     }
 
-    void print(size_t lineNum, size_t line, size_t offset, size_t compressedOffset, size_t uncompressedOffset, int bitOffset, size_t length, const std::vector<uint8_t> windowData, LineSink &sink) {
+    void print(size_t lineNum, size_t line, size_t offset,
+               size_t compressedOffset, size_t uncompressedOffset,
+               int bitOffset, size_t length,
+               const std::vector<uint8_t> windowData, LineSink &sink) {
         // We use and update context while in here. Only if we successfully
         // decode a line do we save it in the cachedContext_ for a subsequent
         // call.
         constexpr auto MaxLength = (64u * 1024 * 1024) - 1;
-        std::unique_ptr<CachedContext> context = resetContext(offset != 0 ? offset : uncompressedOffset - 1, compressedOffset, uncompressedOffset, bitOffset, windowData);
-        uint8_t discardBuffer[WindowSize];        
+        std::unique_ptr<CachedContext> context = resetContext(
+                offset != 0 ? offset : uncompressedOffset - 1, compressedOffset,
+                uncompressedOffset, bitOffset, windowData);
+        uint8_t discardBuffer[WindowSize];
         auto &zs = context->zs_;
         if (length == 0) {
-            //we do not have lineoffset data
+            // we do not have lineoffset data
 
             OneLineSink oneLiner(line, lineNum, sink);
             LineFinder finder(oneLiner);
@@ -473,14 +484,15 @@ WHERE key = :query
             // was left over at that point.
             uInt availOutAtStreamEnd = 0;
 
-
             do {
                 if (zs.stream.avail_in == 0) {
-                    zs.stream.avail_in = ::fread(context->input_, 1,
-                                                 sizeof(context->input_),
-                                                 compressed_.get());
-                    if (ferror(compressed_.get())) throw ZlibError(Z_ERRNO);
-                    if (zs.stream.avail_in == 0) throw ZlibError(Z_DATA_ERROR);
+                    zs.stream.avail_in =
+                            ::fread(context->input_, 1, sizeof(context->input_),
+                                    compressed_.get());
+                    if (ferror(compressed_.get()))
+                        throw ZlibError(Z_ERRNO);
+                    if (zs.stream.avail_in == 0)
+                        throw ZlibError(Z_DATA_ERROR);
                     zs.stream.next_in = context->input_;
                 }
 
@@ -491,16 +503,17 @@ WHERE key = :query
                         finder.add(window, WindowSize, false);
                     }
                     if (oneLiner.lastLineNum > line) {
-                        //passed the line
+                        // passed the line
                         break;
                     }
 
                     first = false;
                 }
-                
+
                 auto availBefore = zs.stream.avail_out;
                 ret = inflate(&zs.stream, Z_NO_FLUSH);
-                if (ret == Z_NEED_DICT) throw ZlibError(Z_DATA_ERROR);
+                if (ret == Z_NEED_DICT)
+                    throw ZlibError(Z_DATA_ERROR);
                 if (ret == Z_MEM_ERROR || ret == Z_DATA_ERROR)
                     throw ZlibError(ret);
                 auto numUncompressed = availBefore - zs.stream.avail_out;
@@ -528,8 +541,8 @@ WHERE key = :query
                     context.reset();
                 }
                 if (oneLiner.lastLineNum > line) {
-                        //passed the line
-                        break;
+                    // passed the line
+                    break;
                 }
 
             } while (ret != Z_STREAM_END);
@@ -541,8 +554,8 @@ WHERE key = :query
             return;
         }
 
-
-        if (length > MaxLength) throw std::runtime_error("Line too long!");
+        if (length > MaxLength)
+            throw std::runtime_error("Line too long!");
         std::unique_ptr<uint8_t[]> lineBuf(new uint8_t[length]);
 
         auto numToSkip = offset - context->uncompressedOffset_;
@@ -565,16 +578,19 @@ WHERE key = :query
             }
             do {
                 if (zs.stream.avail_in == 0) {
-                    zs.stream.avail_in = ::fread(context->input_, 1,
-                                                 sizeof(context->input_),
-                                                 compressed_.get());
-                    if (ferror(compressed_.get())) throw ZlibError(Z_ERRNO);
-                    if (zs.stream.avail_in == 0) throw ZlibError(Z_DATA_ERROR);
+                    zs.stream.avail_in =
+                            ::fread(context->input_, 1, sizeof(context->input_),
+                                    compressed_.get());
+                    if (ferror(compressed_.get()))
+                        throw ZlibError(Z_ERRNO);
+                    if (zs.stream.avail_in == 0)
+                        throw ZlibError(Z_DATA_ERROR);
                     zs.stream.next_in = context->input_;
                 }
                 auto availBefore = zs.stream.avail_out;
                 auto ret = inflate(&zs.stream, Z_NO_FLUSH);
-                if (ret == Z_NEED_DICT) throw ZlibError(Z_DATA_ERROR);
+                if (ret == Z_NEED_DICT)
+                    throw ZlibError(Z_DATA_ERROR);
                 if (ret == Z_MEM_ERROR || ret == Z_DATA_ERROR)
                     throw ZlibError(ret);
                 auto numUncompressed = availBefore - zs.stream.avail_out;
@@ -607,7 +623,8 @@ WHERE key = :query
                     // byte of the buffer legitimately goes unused.
                     const bool haveWholeLine = zs.stream.avail_out <= 1;
                     context.reset();
-                    if (!haveWholeLine) throw ZlibError(Z_DATA_ERROR);
+                    if (!haveWholeLine)
+                        throw ZlibError(Z_DATA_ERROR);
                     break;
                 }
             } while (zs.stream.avail_out);
@@ -618,7 +635,7 @@ WHERE key = :query
                     length - 1);
     }
 };
-Index::Index() { }
+Index::Index() {}
 
 Index::~Index() {}
 
@@ -642,9 +659,9 @@ struct Index::Builder::Impl : LineSink {
 
     Impl(Log &log, File &&from, const std::string &fromPath,
          const std::string &indexFilename)
-            : log(log), from(std::move(from)), fromPath(fromPath),
-              indexFilename(indexFilename), skipFirst(0), db(log),
-              addIndexSql(log), addMetaSql(log), saveAllLines_{false}, sparseLineOffsets_{false} {}
+        : log(log), from(std::move(from)), fromPath(fromPath),
+          indexFilename(indexFilename), skipFirst(0), db(log), addIndexSql(log),
+          addMetaSql(log), saveAllLines_{false}, sparseLineOffsets_{false} {}
 
     void init() {
         auto file = db.toFile(indexFilename);
@@ -721,7 +738,7 @@ INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
         ZStream zs(ZStream::Type::ZlibOrGzip);
         uint8_t input[ChunkSize];
         uint8_t window[WindowSize];
-        auto clearWindow = [&] { /*memset(window, 0, WindowSize); */};
+        auto clearWindow = [&] { /*memset(window, 0, WindowSize); */ };
         clearWindow();
 
         int ret = 0;
@@ -737,7 +754,8 @@ INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
         do {
             if (zs.stream.avail_in == 0) {
                 zs.stream.avail_in = fread(input, 1, ChunkSize, from.get());
-                if (emitInitialAccessPoint && zs.stream.avail_in == 0 && feof(from.get())) {
+                if (emitInitialAccessPoint && zs.stream.avail_in == 0 &&
+                    feof(from.get())) {
                     break;
                 }
                 if (ferror(from.get()))
@@ -747,8 +765,8 @@ INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
                 zs.stream.next_in = input;
             }
             do {
-                
-                if (zs.stream.avail_out == 0 ) {
+
+                if (zs.stream.avail_out == 0) {
                     zs.stream.avail_out = WindowSize;
                     zs.stream.next_out = window;
                     if (!first) {
@@ -756,8 +774,7 @@ INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
                     }
                     first = false;
                 }
-                
-                
+
                 totalIn += zs.stream.avail_in;
                 totalOut += zs.stream.avail_out;
                 ret = inflate(&zs.stream, Z_BLOCK);
@@ -770,8 +787,8 @@ INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
                 if (ret == Z_STREAM_END)
                     break;
                 auto sinceLast = totalOut - last;
-                bool needsIndex = sinceLast > indexEvery
-                                  || emitInitialAccessPoint;
+                bool needsIndex =
+                        sinceLast > indexEvery || emitInitialAccessPoint;
                 bool endOfBlock = zs.stream.data_type & 0x80;
                 bool lastBlockInStream = zs.stream.data_type & 0x40;
                 if (endOfBlock && !lastBlockInStream && needsIndex) {
@@ -780,13 +797,14 @@ INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
                               ")");
                     auto currentLineNumber = finder.lineOffsets().size();
                     if (WindowSize != zs.stream.avail_out) {
-                        for (unsigned int i = 0; i < WindowSize - zs.stream.avail_out; i++)
-                            if (window[i] == '\n') currentLineNumber++;
+                        for (unsigned int i = 0;
+                             i < WindowSize - zs.stream.avail_out; i++)
+                            if (window[i] == '\n')
+                                currentLineNumber++;
                     }
                     if (totalOut != 0) {
                         // Flush previous information.
-                        addIndex
-                                .bindInt64(":uncompressedEndOffset",
+                        addIndex.bindInt64(":uncompressedEndOffset",
                                            totalOut - 1)
                                 .step();
                         addIndex.reset();
@@ -796,8 +814,7 @@ INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
                     std::vector<uint8_t> apWindow(compressBound(WindowSize));
                     auto size = makeWindow(apWindow.data(), apWindow.size(),
                                            window, zs.stream.avail_out);
-                    addIndex
-                            .bindInt64(":uncompressedOffset", totalOut)
+                    addIndex.bindInt64(":uncompressedOffset", totalOut)
                             .bindInt64(":compressedOffset", totalIn)
                             .bindInt64(":bitOffset", zs.stream.data_type & 0x7)
                             .bindBlob(":window", apWindow.data(), size)
@@ -826,9 +843,7 @@ INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
 
         if (totalOut != 0) {
             // Flush last block.
-            addIndex
-                    .bindInt64(":uncompressedEndOffset", totalOut - 1)
-                    .step();
+            addIndex.bindInt64(":uncompressedEndOffset", totalOut - 1).step();
         }
 
         log.info("Index building complete; creating line index");
@@ -836,8 +851,7 @@ INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
         finder.add(window, WindowSize - zs.stream.avail_out, true);
         const auto &lineOffsets = finder.lineOffsets();
         for (size_t line = 0; line < lineOffsets.size() - 1; ++line) {
-            addLine
-                    .reset()
+            addLine.reset()
                     .bindInt64(":line", line + 1)
                     .bindInt64(":offset", lineOffsets[line])
                     .bindInt64(":length",
@@ -846,16 +860,17 @@ INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
             progress.update<size_t>(line, lineOffsets.size() - 1);
         }
         if (sparseLineOffsets_) {
-             std::string sql("");
-             if (indexers.size() > 0) {
+            std::string sql("");
+            if (indexers.size() > 0) {
                 for (auto &&pair : indexers) {
                     if (sql.size() != 0) {
                         sql += " UNION ";
                     }
                     sql += ("select line from " + pair.first);
                 }
-                db.exec("DELETE FROM LineOffsets where line not in (" + sql + ")");
-             }
+                db.exec("DELETE FROM LineOffsets where line not in (" + sql +
+                        ")");
+            }
         }
         log.info("Flushing");
         db.exec(R"(END TRANSACTION)");
@@ -864,8 +879,7 @@ INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
 
     void addMeta(const std::string &key, const std::string &value) {
         log.debug("Adding metadata ", key, " = ", value);
-        addMetaSql
-                .reset()
+        addMetaSql.reset()
                 .bindString(":key", key)
                 .bindString(":value", value)
                 .step();
@@ -874,20 +888,23 @@ INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
     void addIndexer(const std::string &name, const std::string &creation,
                     Index::IndexConfig config,
                     std::unique_ptr<LineIndexer> indexer) {
-        //these flags must be consistent across all indexes, only set to true once
+        // these flags must be consistent across all indexes, only set to true
+        // once
         saveAllLines_ |= !config.sparse;
         sparseLineOffsets_ |= config.sparseLineOffsets;
         auto table = "index_" + name;
         std::string type = config.numeric ? "INTEGER" : "TEXT";
-        if (config.unique) type += " PRIMARY KEY";
+        if (config.unique)
+            type += " PRIMARY KEY";
         db.exec(R"(
-CREATE TABLE )" + table + R"((
-    key )" + type + R"(,
+CREATE TABLE )" +
+                table + R"((
+    key )" + type +
+                R"(,
     line INTEGER,
     offset INTEGER
 ))");
-        addIndexSql
-                .reset()
+        addIndexSql.reset()
                 .bindString(":name", name)
                 .bindString(":creationString", creation)
                 .bindInt64(":isNumeric", config.numeric ? 1 : 0)
@@ -897,29 +914,30 @@ CREATE TABLE )" + table + R"((
 INSERT INTO )" + table + R"( VALUES(:key, :line, :offset)
 )");
         if (config.indexLineOffsets) {
-            db.exec(R"(CREATE INDEX )" + table + R"(_line_index ON )"
-                    + table + R"((line))");
+            db.exec(R"(CREATE INDEX )" + table + R"(_line_index ON )" + table +
+                    R"((line))");
         }
         if (!config.unique) {
-            db.exec(R"(CREATE INDEX )" + table + R"(_key_index ON )"
-                    + table + R"((key))");
+            db.exec(R"(CREATE INDEX )" + table + R"(_key_index ON )" + table +
+                    R"((key))");
         }
         if (config.numeric) {
-            indexers.emplace(table, std::unique_ptr<IndexHandler>(
-                    new NumericHandler(log, std::move(indexer),
-                                       std::move(inserter))));
+            indexers.emplace(
+                    table,
+                    std::unique_ptr<IndexHandler>(new NumericHandler(
+                            log, std::move(indexer), std::move(inserter))));
         } else {
-            indexers.emplace(table, std::unique_ptr<IndexHandler>(
-                    new AlphaHandler(log, std::move(indexer),
-                                     std::move(inserter))));
+            indexers.emplace(
+                    table,
+                    std::unique_ptr<IndexHandler>(new AlphaHandler(
+                            log, std::move(indexer), std::move(inserter))));
         }
     }
 
-    bool onLine(
-            size_t lineNumber,
-            size_t /*fileOffset*/,
-            const char *line, size_t length) override {
-        if (lineNumber <= skipFirst) return true;
+    bool onLine(size_t lineNumber, size_t /*fileOffset*/, const char *line,
+                size_t length) override {
+        if (lineNumber <= skipFirst)
+            return true;
         bool consumed = false;
         for (auto &&pair : indexers) {
             consumed |= pair.second->onLine(lineNumber, line, length);
@@ -931,15 +949,14 @@ INSERT INTO )" + table + R"( VALUES(:key, :line, :offset)
 
 Index::Builder::Builder(Log &log, File &&from, const std::string &fromPath,
                         const std::string &indexFilename)
-        : impl_(new Impl(log, std::move(from), fromPath, indexFilename)) {
+    : impl_(new Impl(log, std::move(from), fromPath, indexFilename)) {
     impl_->init();
 }
 
-Index::Builder &Index::Builder::addIndexer(
-        const std::string &name,
-        const std::string &creation,
-        IndexConfig config,
-        std::unique_ptr<LineIndexer> indexer) {
+Index::Builder &
+Index::Builder::addIndexer(const std::string &name, const std::string &creation,
+                           IndexConfig config,
+                           std::unique_ptr<LineIndexer> indexer) {
     impl_->addIndexer(name, creation, config, std::move(indexer));
     return *this;
 }
@@ -959,14 +976,12 @@ void Index::Builder::build() {
 }
 
 Index Index::load(Log &log, File &&fromCompressed,
-                  const std::string &indexFilename,
-                  bool forceLoad) {
+                  const std::string &indexFilename, bool forceLoad) {
     Sqlite db(log);
     db.open(indexFilename.c_str(), true);
 
-    std::unique_ptr<Impl> impl(new Impl(log,
-                                        std::move(fromCompressed),
-                                        std::move(db)));
+    std::unique_ptr<Impl> impl(
+            new Impl(log, std::move(fromCompressed), std::move(db)));
     impl->init(forceLoad);
     return Index(std::move(impl));
 }
@@ -977,7 +992,9 @@ bool Index::getLine(uint64_t line, LineSink &sink) {
 
 size_t Index::getLines(const std::vector<uint64_t> &lines, LineSink &sink) {
     size_t matched = 0u;
-    for (auto line : lines) if (impl_->getLine(line, sink)) ++matched;
+    for (auto line : lines)
+        if (impl_->getLine(line, sink))
+            ++matched;
     return matched;
 }
 
@@ -995,13 +1012,12 @@ size_t Index::queryIndexMulti(const std::string &index,
     return result;
 }
 
-size_t
-Index::queryCustom(const std::string &customQuery, LineFunction lineFunc) {
+size_t Index::queryCustom(const std::string &customQuery,
+                          LineFunction lineFunc) {
     return impl_->customQuery(customQuery, lineFunc);
 }
 
-Index::Builder::~Builder() {
-}
+Index::Builder::~Builder() {}
 
 size_t Index::indexSize(const std::string &index) const {
     return impl_->indexSize(index);
@@ -1016,7 +1032,6 @@ const Index::Metadata &Index::getMetadata() const {
 }
 
 Index::LineFunction Index::sinkFetch(LineSink &sink) {
-    return std::function<void(size_t)>([this, &sink](size_t line) {
-        this->getLine(line, sink);
-    });
+    return std::function<void(size_t)>(
+            [this, &sink](size_t line) { this->getLine(line, sink); });
 }

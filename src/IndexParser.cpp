@@ -1,9 +1,9 @@
 #include "IndexParser.h"
-#include "RegExpIndexer.h"
-#include "FieldIndexer.h"
 #include "ExternalIndexer.h"
-#include <iostream>
+#include "FieldIndexer.h"
+#include "RegExpIndexer.h"
 #include <fstream>
+#include <iostream>
 #include <stdexcept>
 
 void IndexParser::buildIndexes(Index::Builder *builder, ConsoleLog &log) {
@@ -13,7 +13,7 @@ void IndexParser::buildIndexes(Index::Builder *builder, ConsoleLog &log) {
     cJSON *root = cJSON_Parse(contents.c_str());
     if (root == nullptr) {
         throw std::runtime_error("Could not parse the json config file. "
-                                         "Careful, this is a strict parser.");
+                                 "Careful, this is a strict parser.");
     }
     if (!cJSON_HasObjectItem(root, "indexes")) {
         throw std::runtime_error("No indexes to be found in the config file.");
@@ -51,16 +51,15 @@ void IndexParser::parseIndex(cJSON *index, Index::Builder *builder,
                                 std::unique_ptr<LineIndexer>(
                                         new RegExpIndexer(regex, capture)));
         } else {
-            builder->addIndexer(indexName, regex, config,
-                                std::unique_ptr<LineIndexer>(
-                                        new RegExpIndexer(regex)));
+            builder->addIndexer(
+                    indexName, regex, config,
+                    std::unique_ptr<LineIndexer>(new RegExpIndexer(regex)));
         }
     } else if (type == "field") {
         auto delimiter = getOrThrowStr(index, "delimiter");
         auto fieldNum = getOrThrowUint(index, "fieldNum");
         std::ostringstream name;
-        name << "Field " << fieldNum << " delimited by '"
-             << delimiter << "'";
+        name << "Field " << fieldNum << " delimited by '" << delimiter << "'";
         builder->addIndexer(indexName, name.str(), config,
                             std::unique_ptr<LineIndexer>(
                                     new FieldIndexer(delimiter, fieldNum)));
@@ -68,35 +67,37 @@ void IndexParser::parseIndex(cJSON *index, Index::Builder *builder,
         auto pipeCommand = getOrThrowStr(index, "command");
         auto delimiter = getOrThrowStr(index, "delimiter");
 
-        builder->addIndexer(
-                indexName, pipeCommand, config,
-                std::unique_ptr<LineIndexer>(
-                        new ExternalIndexer(log, pipeCommand, delimiter)));
+        builder->addIndexer(indexName, pipeCommand, config,
+                            std::unique_ptr<LineIndexer>(new ExternalIndexer(
+                                    log, pipeCommand, delimiter)));
     } else {
         throw std::runtime_error("unknown index " + type);
     }
 }
 
 bool IndexParser::getBoolean(cJSON *index, const char *field) const {
-    return cJSON_GetObjectItem(index, field)
-           && cJSON_GetObjectItem(index, field)->type == cJSON_True;
+    return cJSON_GetObjectItem(index, field) &&
+           cJSON_GetObjectItem(index, field)->type == cJSON_True;
 }
 
 std::string IndexParser::getOrThrowStr(cJSON *index, const char *field) const {
     auto *item = cJSON_GetObjectItem(index, field);
     if (!item)
-        throw std::runtime_error("Could not parse the json config file. Field '"
-                                 + std::string(field) + "' was missing");
+        throw std::runtime_error(
+                "Could not parse the json config file. Field '" +
+                std::string(field) + "' was missing");
     return item->valuestring;
 }
 
 unsigned IndexParser::getOrThrowUint(cJSON *index, const char *field) const {
     auto *item = cJSON_GetObjectItem(index, field);
     if (!item)
-        throw std::runtime_error("Could not parse the json config file. Field '"
-                                 + std::string(field) + "' was missing");
+        throw std::runtime_error(
+                "Could not parse the json config file. Field '" +
+                std::string(field) + "' was missing");
     if (item->valueint < 0)
-        throw std::runtime_error("Could not parse the json config file. Field '"
-                                 + std::string(field) + "' was negative");
+        throw std::runtime_error(
+                "Could not parse the json config file. Field '" +
+                std::string(field) + "' was negative");
     return static_cast<unsigned>(item->valueint);
 }

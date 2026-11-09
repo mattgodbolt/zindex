@@ -1,7 +1,7 @@
 #pragma once
 
-#include <cstring>
 #include <cstddef>
+#include <cstring>
 #include <iosfwd>
 #include <string>
 
@@ -10,22 +10,22 @@
 class StringView {
     const char *begin_;
     size_t length_;
+
 public:
     // Construct from a zero-terminated c-style string, which must outlive the
     // StringView.
-    StringView(const char *cStr)
-            : begin_(cStr), length_(strlen(cStr)) { }
+    StringView(const char *cStr) : begin_(cStr), length_(strlen(cStr)) {}
 
     // Construct from a char array or the given length. The array must outlive
     // the StringView.
     StringView(const char *begin, size_t length)
-            : begin_(begin), length_(length) { }
+        : begin_(begin), length_(length) {}
 
     // Construct from a std::string, which must outlive the StringView and not
     // be modified.
     StringView(const std::string &string)
-            : begin_(string.empty() ? nullptr : &string[0]),
-              length_(string.length()) { }
+        : begin_(string.empty() ? nullptr : &string[0]),
+          length_(string.length()) {}
 
     const char *begin() const { return begin_; }
 
@@ -42,8 +42,10 @@ public:
     // itself if possible, else placing the zero-terminated string in the
     // supplied std::string. Only works for strings without embedded nuls.
     const char *c_str(std::string &storage) const {
-        if (length_ == 0) return "";
-        if (begin_[length_] == '\0') return begin_;  // already zero-terminated
+        if (length_ == 0)
+            return "";
+        if (begin_[length_] == '\0')
+            return begin_; // already zero-terminated
         storage.assign(begin_, length_);
         return storage.c_str();
     }

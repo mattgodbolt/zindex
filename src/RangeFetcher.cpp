@@ -1,12 +1,9 @@
 #include "RangeFetcher.h"
 
-RangeFetcher::RangeFetcher(RangeFetcher::Handler &handler,
-                           uint64_t linesBefore,
+RangeFetcher::RangeFetcher(RangeFetcher::Handler &handler, uint64_t linesBefore,
                            uint64_t linesAfter)
-        : linesBefore_(linesBefore), linesAfter_(linesAfter),
-          prevBegin_(0), prevEnd_(0), handler_(handler) {
-
-}
+    : linesBefore_(linesBefore), linesAfter_(linesAfter), prevBegin_(0),
+      prevEnd_(0), handler_(handler) {}
 
 void RangeFetcher::operator()(uint64_t line) {
     auto beginRange = line;

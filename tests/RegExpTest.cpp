@@ -1,6 +1,6 @@
+#include "RegExp.h"
 #include <cstring>
 #include <stdexcept>
-#include "RegExp.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -30,7 +30,7 @@ namespace {
 std::string S(const char *s, RegExp::Match match) {
     return std::string(s + match.first, match.second - match.first);
 }
-}
+} // namespace
 
 TEST_CASE("matches", "[RegExp]") {
     RegExp r("\"eventId\":([0-9]+)");

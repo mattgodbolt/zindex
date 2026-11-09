@@ -1,0 +1,17 @@
+# Run `pre-commit install` once to have these run on every commit.
+exclude: ^(ext/|LICENSE|tests/files/)
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: mixed-line-ending
+      - id: check-yaml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+  - repo: https://github.com/pre-commit/mirrors-clang-format
+    rev: v23.1.5
+    hooks:
+      - id: clang-format
+        types_or: [c++]

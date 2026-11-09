@@ -7,8 +7,6 @@ class LineSink {
 public:
     virtual ~LineSink() = default;
 
-    virtual bool onLine(
-            size_t lineNumber,
-            size_t fileOffset,
-            const char *line, size_t length) = 0;
+    virtual bool onLine(size_t lineNumber, size_t fileOffset, const char *line,
+                        size_t length) = 0;
 };

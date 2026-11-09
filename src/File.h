@@ -6,10 +6,11 @@
 namespace impl {
 struct Closer {
     void operator()(FILE *f) {
-        if (f) ::fclose(f);
+        if (f)
+            ::fclose(f);
     }
 };
-}
+} // namespace impl
 
 // A File is a self-closing FILE *.
 using File = std::unique_ptr<FILE, impl::Closer>;

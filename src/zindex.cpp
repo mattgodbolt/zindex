@@ -1,16 +1,16 @@
-#include "File.h"
-#include "Index.h"
-#include "RegExpIndexer.h"
 #include "ConsoleLog.h"
 #include "FieldIndexer.h"
+#include "File.h"
+#include "Index.h"
 #include "IndexParser.h"
+#include "RegExpIndexer.h"
 
 #include <tclap/CmdLine.h>
 
-#include <iostream>
-#include <stdexcept>
-#include <limits.h>
 #include "ExternalIndexer.h"
+#include <iostream>
+#include <limits.h>
+#include <stdexcept>
 #include <utility>
 
 using namespace std;
@@ -21,34 +21,40 @@ namespace {
 string getRealPath(const string &relPath) {
     char realPathBuf[PATH_MAX];
     auto result = realpath(relPath.c_str(), realPathBuf);
-    if (result == nullptr) return relPath;
+    if (result == nullptr)
+        return relPath;
     return string(relPath);
 }
 
-}
+} // namespace
 
 int Main(int argc, const char *argv[]) {
     CmdLine cmd("Create indices in a compressed text file");
-    UnlabeledValueArg<string> inputFile(
-            "input-file", "Read input from <file>", true, "", "file", cmd);
+    UnlabeledValueArg<string> inputFile("input-file", "Read input from <file>",
+                                        true, "", "file", cmd);
     SwitchArg verbose("v", "verbose", "Be more verbose", cmd);
     SwitchArg debug("", "debug", "Be even more verbose", cmd);
     SwitchArg forceColour("", "colour", "Use colour even on non-TTY", cmd);
     SwitchArg forceColor("", "color", "Use color even on non-TTY", cmd);
     SwitchArg numeric("n", "numeric", "Assume the index is numeric", cmd);
     SwitchArg unique("u", "unique", "Assume each line's index is unique", cmd);
-    SwitchArg sparse("s", "sparse", "Sparse - only save line offsets for rows"
-                             " that have ids. Merges all rows that have no id to the most recent"
-                             "id. Useful if your file is one id row followed by n data rows.",
-                     cmd);
-    SwitchArg sparseLineOffsets("o", "sparseLineOffsets", "sparseLineOffsets - only save line offsets for rows"
-                             " that have ids. Useful if you do not need to query for non-indexed lines.",
-                     cmd);
+    SwitchArg sparse(
+            "s", "sparse",
+            "Sparse - only save line offsets for rows"
+            " that have ids. Merges all rows that have no id to the most recent"
+            "id. Useful if your file is one id row followed by n data rows.",
+            cmd);
+    SwitchArg sparseLineOffsets(
+            "o", "sparseLineOffsets",
+            "sparseLineOffsets - only save line offsets for rows"
+            " that have ids. Useful if you do not need to query for "
+            "non-indexed lines.",
+            cmd);
     SwitchArg warnings("w", "warnings", "Log warnings at info level", cmd);
     ValueArg<uint64_t> checkpointEvery(
             "", "checkpoint-every",
-            "Create a compression checkpoint every <bytes>", false,
-            0, "bytes", cmd);
+            "Create a compression checkpoint every <bytes>", false, 0, "bytes",
+            cmd);
     ValueArg<string> regex("", "regex", "Create an index using <regex>", false,
                            "", "regex", cmd);
     ValueArg<uint> capture("", "capture",
@@ -56,52 +62,54 @@ int Main(int argc, const char *argv[]) {
                            false, 0, "capture", cmd);
     ValueArg<uint64_t> skipFirst("", "skip-first", "Skip the first <num> lines",
                                  false, 0, "num", cmd);
-    ValueArg<int> field("f", "field", "Create an index using field <num> "
-                                "(delimited by -d/--delimiter, 1-based)",
+    ValueArg<int> field("f", "field",
+                        "Create an index using field <num> "
+                        "(delimited by -d/--delimiter, 1-based)",
                         false, 0, "num", cmd);
-    ValueArg<string> configFile("c", "config", "Create indexes using json "
-            "config file <file>", false, "", "indexes", cmd);
-    ValueArg<string> delimiterArg(
-            "d", "delimiter", "Use <delim> as the field delimiter", false, " ",
-            "delim", cmd);
-    SwitchArg tabDelimiterArg(
-            "", "tab-delimiter", "Use a tab character as the field delimiter",
-            cmd);
+    ValueArg<string> configFile("c", "config",
+                                "Create indexes using json "
+                                "config file <file>",
+                                false, "", "indexes", cmd);
+    ValueArg<string> delimiterArg("d", "delimiter",
+                                  "Use <delim> as the field delimiter", false,
+                                  " ", "delim", cmd);
+    SwitchArg tabDelimiterArg("", "tab-delimiter",
+                              "Use a tab character as the field delimiter",
+                              cmd);
     ValueArg<string> externalIndexer(
             "p", "pipe",
             "Create indices by piping output through <CMD> which should output "
-                    "a single line for each input line. "
-                    "Multiple keys should be separated by the --delimiter "
-                    "character (which defaults to a space). "
-                    "The CMD should be unbuffered "
-                    "(man stdbuf(1) for one way of doing this).\n"
-                    "Example:  --pipe 'jq --raw-output --unbuffered .eventId')",
+            "a single line for each input line. "
+            "Multiple keys should be separated by the --delimiter "
+            "character (which defaults to a space). "
+            "The CMD should be unbuffered "
+            "(man stdbuf(1) for one way of doing this).\n"
+            "Example:  --pipe 'jq --raw-output --unbuffered .eventId')",
             false, "", "CMD", cmd);
     ValueArg<string> indexFilename("", "index-file",
                                    "Store index in <index-file> "
-                                           "(default <file>.zindex)", false, "",
-                                   "index-file", cmd);
+                                   "(default <file>.zindex)",
+                                   false, "", "index-file", cmd);
     cmd.parse(argc, argv);
 
-    ConsoleLog log(
-            debug.isSet() ? Log::Severity::Debug : verbose.isSet()
-                                                   ? Log::Severity::Info
-                                                   : Log::Severity::Warning,
-            forceColour.isSet() || forceColor.isSet(), warnings.isSet());
+    ConsoleLog log(debug.isSet()     ? Log::Severity::Debug
+                   : verbose.isSet() ? Log::Severity::Info
+                                     : Log::Severity::Warning,
+                   forceColour.isSet() || forceColor.isSet(), warnings.isSet());
 
     try {
         auto realPath = getRealPath(inputFile.getValue());
         File in(fopen(realPath.c_str(), "rb"));
         if (in.get() == nullptr) {
             log.debug("Unable to open ", inputFile.getValue(), " (as ",
-                      realPath,
-                      ")");
+                      realPath, ")");
             log.error("Could not open ", inputFile.getValue(), " for reading");
             return 1;
         }
 
-        auto outputFile = indexFilename.isSet() ? indexFilename.getValue() :
-                          inputFile.getValue() + ".zindex";
+        auto outputFile = indexFilename.isSet()
+                                  ? indexFilename.getValue()
+                                  : inputFile.getValue() + ".zindex";
         Index::Builder builder(log, std::move(in), realPath, outputFile);
         if (skipFirst.isSet())
             builder.skipFirst(skipFirst.getValue());
@@ -111,7 +119,7 @@ int Main(int argc, const char *argv[]) {
         config.unique = unique.isSet();
         config.sparse = sparse.isSet();
         config.sparseLineOffsets = sparseLineOffsets.isSet();
-        //config.indexLineOffsets = // TODO - add command line flag if desired
+        // config.indexLineOffsets = // TODO - add command line flag if desired
 
         auto delimiter = delimiterArg.getValue();
         if (tabDelimiterArg.isSet() && delimiterArg.isSet()) {
@@ -128,11 +136,11 @@ int Main(int argc, const char *argv[]) {
             if (regex.isSet() && field.isSet()) {
                 throw std::runtime_error(
                         "Sorry; multiple indices must be defined by an "
-                                "indexes file - see '-i' option");
+                        "indexes file - see '-i' option");
             }
             if (regex.isSet()) {
-                auto regexIndexer = new RegExpIndexer(regex.getValue(),
-                                                      capture.getValue());
+                auto regexIndexer =
+                        new RegExpIndexer(regex.getValue(), capture.getValue());
                 builder.addIndexer("default", regex.getValue(), config,
                                    std::unique_ptr<LineIndexer>(regexIndexer));
             }
@@ -140,17 +148,14 @@ int Main(int argc, const char *argv[]) {
                 ostringstream name;
                 name << "Field " << field.getValue() << " delimited by '"
                      << delimiter << "'";
-                builder.addIndexer("default", name.str(), config,
-                                   std::unique_ptr<LineIndexer>(
-                                           new FieldIndexer(
-                                                   delimiter,
-                                                   field.getValue())));
+                builder.addIndexer(
+                        "default", name.str(), config,
+                        std::unique_ptr<LineIndexer>(
+                                new FieldIndexer(delimiter, field.getValue())));
             }
             if (externalIndexer.isSet()) {
-                auto indexer = std::unique_ptr<LineIndexer>(
-                        new ExternalIndexer(log,
-                                            externalIndexer.getValue(),
-                                            delimiter));
+                auto indexer = std::unique_ptr<LineIndexer>(new ExternalIndexer(
+                        log, externalIndexer.getValue(), delimiter));
                 builder.addIndexer("default", externalIndexer.getValue(),
                                    config, std::move(indexer));
             }

@@ -6,7 +6,7 @@ time- and space-efficient way.
 
 ### The itch I had
 
-I have many multigigabyte text gzipped log files and I'd like to be able to find data in them by an index. 
+I have many multigigabyte text gzipped log files and I'd like to be able to find data in them by an index.
 There's a key on each line that a simple regex can pull out. However, to find a
 particular record requires `zgrep`, which takes ages as it has to seek through
 gigabytes of previous data to get to each record.
@@ -86,7 +86,7 @@ $ make
 To support more than one index, or for easier configuration than all the command-line flags that might be
 needed, there is a JSON configuration format. Pass the `--config <yourconfigfile>.json` option and put something like this in the configuration file:
 
-    { 
+    {
         "indexes": [
             {
                 "type": "field",

@@ -1,15 +1,14 @@
-#include <unistd.h>
+#include <errno.h>
 #include <stdexcept>
 #include <string>
-#include <errno.h>
+#include <unistd.h>
 
 #include "Pipe.h"
 
-Pipe::Pipe()
-        : pipeFds_{ -1, -1 } {
+Pipe::Pipe() : pipeFds_{-1, -1} {
     if (pipe(pipeFds_) == -1)
-        throw std::runtime_error("Unable to create a pipe: "
-                                 + std::to_string(errno)); // TODO: errno
+        throw std::runtime_error("Unable to create a pipe: " +
+                                 std::to_string(errno)); // TODO: errno
 }
 
 Pipe::~Pipe() {
