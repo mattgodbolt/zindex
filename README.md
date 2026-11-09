@@ -103,7 +103,49 @@ needed, there is a JSON configuration format. Pass the `--config <yourconfigfile
     }
 
 This creates two indices, one on the first field and one on the second field, as delimited by tabs. One can
-then specify which index to query with the `-i <index>` option of `zq`.
+then specify which index to query with the `-i <index>` option of `zq`. An index with no `"name"` is called
+`default`, and is the one `zq` queries when no `-i` is given.
+
+Fields are always selected by their 1-based number (`--field` or `fieldNum`); selecting a field by the name in a
+header line is not supported.
+
+## Advanced usage
+
+### Useful indexing options
+
+* `--tab-delimiter` is shorthand for a tab `--delimiter`, which is awkward to type in a shell.
+* `--index-file <path>` (on both `zindex` and `zq`) stores or reads the index at `<path>` instead of `file.gz.zindex`.
+* `-o`/`--sparseLineOffsets` only stores line offsets for lines that have an index key. Lines without one can
+  still be fetched by line number (`zq --line`), but the option is aimed at cases where you only ever look up lines
+  by key.
+
+```bash
+$ zindex file.gz --tab-delimiter --field 3 --index-file /somewhere/else.idx
+$ zq file.gz --index-file /somewhere/else.idx blue
+```
+
+### Custom queries with `--raw`
+
+An index is a SQLite database, and `zq --raw "<sql>"` runs your own query against it instead of a simple
+key lookup. Each index is a table called `index_<name>` (so `index_default` for an unnamed index) with, among
+others, a `key` column and a `line` column. **The first column of your query must be the line number**: `zq`
+prints those lines from the file and ignores any other columns. (A query such as `select count(*) ...` therefore
+prints the line numbered by the count, not the count itself.)
+
+For a tab-separated file of word, number and colour, indexed (via a configuration file as above) with indices
+named `word` (field 1) and `colour` (field 3), this finds every line whose word starts with `al` (a wildcard
+search):
+
+```bash
+$ zq file.gz --raw "select a.line from index_word a where a.key like 'al%';"
+```
+
+To combine indices, join them on `line`: lines whose word starts with `al` and whose colour is `red`:
+
+```bash
+$ zq file.gz --raw "select a.line from index_word a, index_colour b
+    where a.line == b.line and a.key like 'al%' and b.key == 'red';"
+```
 
 ### Issues and feature requests
 
