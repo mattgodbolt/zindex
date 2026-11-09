@@ -41,3 +41,16 @@ TEST_CASE("field indexes", "[FieldIndexer]") {
         CHECK(sink.captured == vs({"bibble"}));
     }
 }
+
+TEST_CASE("delimiter escapes", "[FieldIndexer]") {
+    CHECK(unescapeDelimiter("\\t") == "\t");
+    // Everything else is passed through untouched.
+    CHECK(unescapeDelimiter("\t") == "\t");
+    CHECK(unescapeDelimiter(" ") == " ");
+    CHECK(unescapeDelimiter(",") == ",");
+    CHECK(unescapeDelimiter("::") == "::");
+    CHECK(unescapeDelimiter("\\") == "\\");
+    CHECK(unescapeDelimiter("\\n") == "\\n");
+    CHECK(unescapeDelimiter("a\\t") == "a\\t");
+    CHECK(unescapeDelimiter("") == "");
+}

@@ -19,3 +19,9 @@ void FieldIndexer::index(IndexSink &sink, StringView line) {
     if (ptr != end)
         sink.add(StringView(ptr, end - ptr), ptr - line.begin());
 }
+
+std::string unescapeDelimiter(const std::string &delimiter) {
+    if (delimiter == "\\t")
+        return "\t";
+    return delimiter;
+}
