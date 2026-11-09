@@ -476,17 +476,12 @@ TEST_CASE("sparsely indexes files", "[Index]") {
                     .indexEvery(256 * 1024)
                     .build();
         };
-        auto freePages = [&](const string &indexFile) {
+        auto scalar = [&](const string &indexFile, const string &sql) {
             Sqlite db(log);
             db.open(indexFile, true);
-            auto stmt = db.prepare("PRAGMA freelist_count");
+            auto stmt = db.prepare(sql);
             REQUIRE_FALSE(stmt.step()); // false means a row is available
             return stmt.columnInt64(0);
-        };
-        auto fileSize = [](const string &path) {
-            struct stat st;
-            REQUIRE(stat(path.c_str(), &st) == 0);
-            return st.st_size;
         };
 
         auto fullIndex = testFile + ".full.zindex";
@@ -496,8 +491,17 @@ TEST_CASE("sparsely indexes files", "[Index]") {
 
         // Deleting rows after inserting them leaves the pages on the freelist
         // rather than shrinking the file, so check for both symptoms.
-        CHECK(freePages(sparseIndex) == 0);
-        CHECK(fileSize(sparseIndex) < fileSize(fullIndex));
+        CHECK(scalar(sparseIndex, "PRAGMA freelist_count") == 0);
+        CHECK(scalar(sparseIndex, "PRAGMA page_count") <
+              scalar(fullIndex, "PRAGMA page_count"));
+
+        // ...and exactly the lines with keys must have been kept.
+        auto sparseRows =
+                scalar(sparseIndex, "SELECT COUNT(*) FROM LineOffsets");
+        CHECK(sparseRows ==
+              scalar(sparseIndex, "SELECT COUNT(*) FROM index_default"));
+        CHECK(sparseRows <
+              scalar(fullIndex, "SELECT COUNT(*) FROM LineOffsets"));
 
         // Lines without keys must still be reachable by line number.
         Index index = Index::load(log, File(fopen(testFile.c_str(), "rb")),

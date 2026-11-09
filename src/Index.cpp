@@ -657,7 +657,10 @@ struct Index::Builder::Impl : LineSink {
     bool saveAllLines_;
     bool sparseLineOffsets_;
     // Only populated when sparseLineOffsets_ is set: indexedLines_[n] is true
-    // if line n produced at least one index key.
+    // if line n produced at least one index key. n is the 1-based number
+    // passed to onLine() (LineFinder passes lineOffsets_.size() + 1), which in
+    // --sparse mode counts only the lines retained so far, not the file's
+    // original lines; that is why the insert loop looks up line + 1.
     std::vector<bool> indexedLines_;
 
     Impl(Log &log, File &&from, const std::string &fromPath,
