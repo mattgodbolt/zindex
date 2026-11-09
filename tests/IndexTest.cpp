@@ -11,6 +11,8 @@
 #include <sys/stat.h>
 #include <FieldIndexer.h>
 #include <Index.h>
+#include <utility>
+#include <zlib.h>
 
 using namespace std;
 
@@ -54,7 +56,7 @@ TEST_CASE("indexes files", "[Index]") {
         builder
                 .addIndexer("default", "blah",
                             Index::IndexConfig().withNumeric(true).withUnique(
-                                    true), move(indexer))
+                                    true), std::move(indexer))
                 .indexEvery(256 * 1024)
                 .build();
         Index index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
@@ -101,9 +103,9 @@ TEST_CASE("indexes files", "[Index]") {
                             .withSparseLineOffsets(true);
         builder
                 .addIndexer("_23", "blah",
-                            config, move(indexer))
+                            config, std::move(indexer))
                 .addIndexer("_100", "blah",
-                            config, move(indexer100))
+                            config, std::move(indexer100))
                 .indexEvery(256 * 1024)
                 .build();
 
@@ -172,7 +174,7 @@ TEST_CASE("indexes files", "[Index]") {
                 builder.addIndexer("default", "blah",
                                    Index::IndexConfig().withNumeric(
                                            true).withUnique(true),
-                                   move(indexer))
+                                   std::move(indexer))
                         .indexEvery(256 * 1024)
                         .build());
     }
@@ -183,7 +185,7 @@ TEST_CASE("indexes files", "[Index]") {
         unique_ptr<LineIndexer> indexer(new RegExpIndexer("Mod ([0-9]+)"));
         builder.addIndexer("default", "blah",
                            Index::IndexConfig().withNumeric(true),
-                           move(indexer))
+                           std::move(indexer))
                 .indexEvery(256 * 1024)
                 .build();
         Index index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
@@ -218,7 +220,7 @@ TEST_CASE("indexes files", "[Index]") {
         builder
                 .addIndexer("default", "blah",
                             Index::IndexConfig().withUnique(true),
-                            move(indexer))
+                            std::move(indexer))
                 .indexEvery(256 * 1024)
                 .build();
         Index index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
@@ -246,7 +248,7 @@ TEST_CASE("indexes files", "[Index]") {
         unique_ptr<LineIndexer> indexer(new RegExpIndexer("\\w+"));
         builder
                 .addIndexer("default", "blah", Index::IndexConfig(),
-                            move(indexer))
+                            std::move(indexer))
                 .indexEvery(256 * 1024)
                 .build();
         Index index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
@@ -273,7 +275,7 @@ TEST_CASE("indexes files", "[Index]") {
         unique_ptr<LineIndexer> indexer(new FieldIndexer(" ", 2));
         builder.addIndexer("default", "blah",
                            Index::IndexConfig().withNumeric(true),
-                           move(indexer))
+                           std::move(indexer))
                 .indexEvery(256 * 1024)
                 .build();
         Index index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
@@ -331,7 +333,7 @@ TEST_CASE("indexes concatenated files", "[Index]") {
             .addIndexer(
                     "default", "blah",
                     Index::IndexConfig().withNumeric(true).withUnique(true),
-                    move(indexer))
+                    std::move(indexer))
             .indexEvery(256 * 1024)
             .build();
     Index index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
@@ -363,6 +365,69 @@ TEST_CASE("indexes concatenated files", "[Index]") {
     CheckIndex(3, "Line 3 - Hex 3 - Mod 3");
 }
 
+// Regression test: when the compressed file's size is an exact multiple of the
+// read chunk size, the end of the deflate stream is seen before EOF is, and
+// the last line (which has no terminating newline) used to crash or fail.
+// Writing a stored (uncompressed) deflate block by hand makes the compressed
+// size exactly predictable regardless of the zlib in use.
+TEST_CASE("reads an unterminated last line at a chunk boundary", "[Index]") {
+    TempDir tempDir;
+    CaptureLog log;
+    constexpr size_t chunkSize = 16384;
+    // 10 byte gzip header + 5 byte stored block header + 8 byte trailer.
+    constexpr size_t dataSize = chunkSize - 10 - 5 - 8;
+    string data;
+    size_t lineNum = 0;
+    while (true) {
+        auto line = "Line " + to_string(lineNum + 1) + "\n";
+        if (data.size() + line.size() + 16 > dataSize) break;
+        data += line;
+        ++lineNum;
+    }
+    ++lineNum;
+    const auto lastLinePrefix = "Line " + to_string(lineNum) + " ";
+    const auto lastLine =
+            lastLinePrefix +
+            string(dataSize - data.size() - lastLinePrefix.size(), 'x');
+    data += lastLine;
+    REQUIRE(data.size() == dataSize);
+
+    auto testFile = tempDir.path + "/test.log.gz";
+    {
+        auto le = [](string &out, uint32_t v, int bytes) {
+            for (int i = 0; i < bytes; ++i)
+                out.push_back(static_cast<char>((v >> (8 * i)) & 0xff));
+        };
+        string gz("\x1f\x8b\x08\x00\x00\x00\x00\x00\x00\x03", 10);
+        gz.push_back(1); // final, stored block
+        le(gz, static_cast<uint32_t>(dataSize), 2);
+        le(gz, static_cast<uint32_t>(~dataSize) & 0xffff, 2);
+        gz += data;
+        le(gz,
+           static_cast<uint32_t>(
+                   crc32(0, reinterpret_cast<const Bytef *>(data.data()),
+                         static_cast<uInt>(data.size()))),
+           4);
+        le(gz, static_cast<uint32_t>(dataSize), 4);
+        REQUIRE(gz.size() == chunkSize);
+        ofstream out(testFile, ios::binary);
+        out.write(gz.data(), static_cast<streamsize>(gz.size()));
+    }
+    Index::Builder builder(log, File(fopen(testFile.c_str(), "rb")), testFile,
+                           testFile + ".zindex");
+    unique_ptr<LineIndexer> indexer(new RegExpIndexer("^Line ([0-9]+)"));
+    builder.addIndexer("default", "blah",
+                       Index::IndexConfig().withNumeric(true).withUnique(true),
+                       std::move(indexer))
+            .build();
+    Index index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
+                              testFile + ".zindex", false);
+    CaptureSink cs;
+    index.getLine(lineNum, cs);
+    REQUIRE(cs.captured.size() == 1);
+    CHECK(cs.captured.at(0) == lastLine);
+}
+
 TEST_CASE("sparsely indexes files", "[Index]") {
     TempDir tempDir;
     CaptureLog log;
@@ -388,7 +453,7 @@ TEST_CASE("sparsely indexes files", "[Index]") {
         unique_ptr<LineIndexer> indexer(new RegExpIndexer("Line ([^-]+) "));
         builder
                 .addIndexer("default", "blah", Index::IndexConfig(),
-                            move(indexer))
+                            std::move(indexer))
                 .indexEvery(256 * 1024)
                 .build();
         Index index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
@@ -426,7 +491,7 @@ TEST_CASE("metadata tests", "[Index]") {
                            testFile + ".zindex");
     unique_ptr<LineIndexer> indexer(new RegExpIndexer("\\w+"));
     builder
-            .addIndexer("default", "blah", Index::IndexConfig(), move(indexer))
+            .addIndexer("default", "blah", Index::IndexConfig(), std::move(indexer))
             .build();
     SECTION("loads metadata") {
         Index index = Index::load(log, File(fopen(testFile.c_str(), "rb")),

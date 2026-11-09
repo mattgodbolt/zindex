@@ -468,6 +468,10 @@ WHERE key = :query
             bool first = true;
             auto ret = 0;
             uint8_t window[WindowSize];
+            // `zs` refers into `context`, which is freed at the end of a
+            // concatenated gzip member, so remember how much of the window
+            // was left over at that point.
+            uInt availOutAtStreamEnd = 0;
 
 
             do {
@@ -520,6 +524,7 @@ WHERE key = :query
                     // whole context out.  Ideally we'd skip the (optional?)
                     // trailer and reset the zlib state back in normal, non-raw
                     // mode and play on.
+                    availOutAtStreamEnd = zs.stream.avail_out;
                     context.reset();
                 }
                 if (oneLiner.lastLineNum > line) {
@@ -528,7 +533,10 @@ WHERE key = :query
                 }
 
             } while (ret != Z_STREAM_END);
-            finder.add(window, WindowSize - zs.stream.avail_out, true);
+            finder.add(window,
+                       WindowSize - (context ? zs.stream.avail_out
+                                             : availOutAtStreamEnd),
+                       true);
 
             return;
         }
@@ -593,7 +601,14 @@ WHERE key = :query
                     if (skipping)
                         throw std::runtime_error(
                                 "Tried to cross a gzip stream boundary");
+                    // `zs` refers into `context`, so decide whether we have the
+                    // whole line before we destroy it. A final line with no
+                    // terminating newline is indexed as if it had one, so one
+                    // byte of the buffer legitimately goes unused.
+                    const bool haveWholeLine = zs.stream.avail_out <= 1;
                     context.reset();
+                    if (!haveWholeLine) throw ZlibError(Z_DATA_ERROR);
+                    break;
                 }
             } while (zs.stream.avail_out);
         } while (skipping);
@@ -776,14 +791,16 @@ INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
                                 .step();
                         addIndex.reset();
                     }
-                    uint8_t apWindow[compressBound(WindowSize)];
-                    auto size = makeWindow(apWindow, sizeof(apWindow), window,
-                                           zs.stream.avail_out);
+                    // compressBound() isn't a constant expression, so this
+                    // can't be a (non-standard) variable-length array.
+                    std::vector<uint8_t> apWindow(compressBound(WindowSize));
+                    auto size = makeWindow(apWindow.data(), apWindow.size(),
+                                           window, zs.stream.avail_out);
                     addIndex
                             .bindInt64(":uncompressedOffset", totalOut)
                             .bindInt64(":compressedOffset", totalIn)
                             .bindInt64(":bitOffset", zs.stream.data_type & 0x7)
-                            .bindBlob(":window", apWindow, size)
+                            .bindBlob(":window", apWindow.data(), size)
                             .bindInt64(":lineNum", currentLineNumber);
                     last = totalOut;
                     emitInitialAccessPoint = false;
