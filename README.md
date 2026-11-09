@@ -162,7 +162,7 @@ $ zq file.gz --raw "select a.line from index_word a where a.key like 'al%';"
 
 `LIKE` uses `%` (any characters) and `_` (one character) as wildcards, and is case-insensitive for ASCII, so this
 also matches `Alpine`. For a case-sensitive match use `GLOB`, whose wildcards are `*` and `?`:
-`where a.key glob 'al*'`. Don't mix them up: `like 'al*'` is valid but silently matches nothing. To find lines whose
+`where a.key glob 'al*'`. Don't mix them up: in `LIKE`, `*` is an ordinary character, so `like 'al*'` is valid but only matches a key that literally is `al*` (in practice, nothing). To find lines whose
 key contains a word anywhere, use `like '%something%'`. Any `LIKE` scans the whole index table, wherever the
 wildcard is (still far cheaper than scanning the compressed file); a case-sensitive prefix search written as
 `glob 'al*'` can instead use the key's SQLite index.
