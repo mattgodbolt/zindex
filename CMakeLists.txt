@@ -181,4 +181,5 @@ enable_testing()
 catch_discover_tests(unit-tests DISCOVERY_MODE PRE_TEST)
 
 add_test(NAME no-indexer-line-offsets
-         COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/no_indexer_e2e.sh $<TARGET_FILE:zindex> $<TARGET_FILE:zq>)
+         COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/no_indexer_e2e.sh
+                 $<TARGET_FILE:zindex> $<TARGET_FILE:zq>)

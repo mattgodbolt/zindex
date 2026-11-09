@@ -9,15 +9,19 @@ WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 cd "$WORK"
 
-# Compare every STEP-th line (plus the first and last) from zq against zcat.
+# Compare every STEP-th line (plus the first and last) from zq against the
+# decompressed file. gzip -dc rather than zcat: Apple's zcat expects .Z files.
 check_lines() {
-    local file=$1 total=$2 step=$3 extra=${4:-}
-    local n
-    zcat "$file" >"$file.txt"
+    local file=$1 total=$2 step=$3
+    shift 3
+    local zq_args=("$@") n expected actual
+    gzip -dc "$file" >"$file.txt"
     for n in 1 $(seq "$step" "$step" "$total") "$total"; do
-        # shellcheck disable=SC2086
         expected=$(sed -n "${n}p" "$file.txt")
-        actual=$("$ZQ" $extra "$file" -l "$n")
+        if ! actual=$("$ZQ" ${zq_args[@]+"${zq_args[@]}"} "$file" -l "$n"); then
+            echo "FAIL: zq exited non-zero for $file line $n"
+            exit 1
+        fi
         if [ "$expected" != "$actual" ]; then
             echo "FAIL: $file line $n: expected '$expected' got '$actual'"
             exit 1
@@ -25,34 +29,38 @@ check_lines() {
     done
 }
 
+# A small checkpoint interval forces many checkpoints even in a modest file, so
+# lookups have to cross several of them.
+zindex() { "$ZINDEX" --checkpoint-every 65536 "$@"; }
+
 python3 -I -c "
 for i in range(1,11):
     print('line %d' % i)" | gzip >small.gz
 python3 -I -c "
-for i in range(1,300001):
+for i in range(1,60001):
     print(('id:%d row %d' % (i, i)) if i%10==0 else 'filler row %d' % i)" |
     gzip >big.gz
 
-"$ZINDEX" small.gz
+zindex small.gz
 check_lines small.gz 10 1
 
-"$ZINDEX" big.gz
-check_lines big.gz 300000 7919
+zindex big.gz
+check_lines big.gz 60000 3989
 
 # Re-running over the existing index, and the options that interact with it.
-"$ZINDEX" big.gz
-check_lines big.gz 300000 19997
-"$ZINDEX" -o big.gz
-check_lines big.gz 300000 19997
-"$ZINDEX" --skip-first 5 big.gz
-check_lines big.gz 300000 19997
-"$ZINDEX" --index-file custom.idx big.gz
-check_lines big.gz 300000 19997 "--index-file custom.idx"
+zindex big.gz
+check_lines big.gz 60000 9973
+zindex -o big.gz
+check_lines big.gz 60000 9973
+zindex --skip-first 5 big.gz
+check_lines big.gz 60000 9973
+zindex --index-file custom.idx big.gz
+check_lines big.gz 60000 9973 --index-file custom.idx
 
 # Concatenated gzip members.
 cat small.gz big.gz small.gz >cat.gz
-"$ZINDEX" cat.gz
-check_lines cat.gz 300020 19997
+zindex cat.gz
+check_lines cat.gz 60020 9973
 
 # A key query on a line-only index must fail cleanly, not crash or hang.
 if "$ZQ" big.gz "id:10" >out.txt 2>err.txt; then
