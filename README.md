@@ -107,7 +107,7 @@ then specify which index to query with the `-i <index>` option of `zq`. An index
 `default`, and is the one `zq` queries when no `-i` is given.
 
 Fields are always selected by their 1-based number (`--field` or `fieldNum`); selecting a field by column name
-is not supported. Index names should only contain letters, digits and underscores (they become part of an SQL
+is not supported. Index names must only contain letters, digits and underscores (they become part of an SQL
 table name). If every index in the configuration has a `"name"`, there is no `default` index, so `zq` needs `-i`
 to say which one to query.
 
@@ -133,8 +133,10 @@ chromosome and position) use `--raw`, below.
 * `--index-file <path>` (on both `zindex` and `zq`) stores or reads the index at `<path>` instead of `file.gz.zindex`.
 * `-o`/`--sparseLineOffsets` only stores line offsets for lines that have an index key. Lines without one can
   still be fetched by line number (`zq --line`), but this is slower, as `zq` has to read forward from the nearest
-  preceding indexed line. It is aimed at cases where you only ever look up lines by key. It is not the same as
-  `-s`/`--sparse`, which merges un-keyed lines into the most recent keyed line.
+  preceding decompression checkpoint (see `--checkpoint-every`). It is aimed at cases where you only ever look up lines by key. It is not the same as
+  `-s`/`--sparse`, which merges un-keyed lines into the most recent keyed line;
+  line numbers then count those merged records rather than original lines, so `--line` cannot address an individual
+  un-keyed line.
 
 ```bash
 $ zindex file.gz --tab-delimiter --field 3 --index-file /somewhere/else.idx
@@ -161,8 +163,9 @@ $ zq file.gz --raw "select a.line from index_word a where a.key like 'al%';"
 `LIKE` uses `%` (any characters) and `_` (one character) as wildcards, and is case-insensitive for ASCII, so this
 also matches `Alpine`. For a case-sensitive match use `GLOB`, whose wildcards are `*` and `?`:
 `where a.key glob 'al*'`. Don't mix them up: `like 'al*'` is valid but silently matches nothing. To find lines whose
-key contains a word anywhere, use `like '%something%'`; a leading wildcard cannot use the key's SQLite index, so
-this scans the whole index table.
+key contains a word anywhere, use `like '%something%'`. Any `LIKE` scans the whole index table, wherever the
+wildcard is (still far cheaper than scanning the compressed file); a case-sensitive prefix search written as
+`glob 'al*'` can instead use the key's SQLite index.
 
 To combine indices, join them on `line`: lines whose word starts with `al` and whose colour is `red`:
 
