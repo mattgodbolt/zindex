@@ -37,14 +37,16 @@ public:
         bool unique;
         bool sparse;
         bool indexLineOffsets;
+        bool sparseLineOffsets;
 
         IndexConfig() :
-                numeric{false}, unique{false}, sparse{false}, indexLineOffsets{false} {};
+                numeric{false}, unique{false}, sparse{false}, indexLineOffsets{false}, sparseLineOffsets{false} {};
         
         IndexConfig withNumeric(bool b) { numeric = b; return *this; };
         IndexConfig withUnique(bool b) { unique = b; return *this; };
         IndexConfig withSparse(bool b) { sparse = b; return *this; };
         IndexConfig withIndexLineOffsets(bool b) { indexLineOffsets = b; return *this; };
+        IndexConfig withSparseLineOffsets(bool b) { sparseLineOffsets = b; return *this; };
     };
 
     // Retrieve a single line by line number, calling the supplied LineSink with
@@ -98,6 +100,9 @@ public:
 
     // Return the number of entries in a particular sub-index.
     size_t indexSize(const std::string &index) const;
+
+    // Return the number of entries in a particular table.
+    size_t tableSize(const std::string &name) const;
 
     // Metadata is a blob of strings that describe aspects of the index. They're
     // pretty opaque and not designed to be used in user code.
