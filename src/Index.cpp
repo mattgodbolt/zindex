@@ -656,6 +656,9 @@ struct Index::Builder::Impl : LineSink {
     std::unordered_map<std::string, std::unique_ptr<IndexHandler>> indexers;
     bool saveAllLines_;
     bool sparseLineOffsets_;
+    // Only populated when sparseLineOffsets_ is set: indexedLines_[n] is true
+    // if line n produced at least one index key.
+    std::vector<bool> indexedLines_;
 
     Impl(Log &log, File &&from, const std::string &fromPath,
          const std::string &indexFilename)
@@ -850,7 +853,13 @@ INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
 
         finder.add(window, WindowSize - zs.stream.avail_out, true);
         const auto &lineOffsets = finder.lineOffsets();
+        // Skip rows we'd otherwise delete: removing them afterwards leaves the
+        // pages on the freelist, so the file would not shrink.
+        const bool onlyIndexedLines = sparseLineOffsets_ && !indexers.empty();
         for (size_t line = 0; line < lineOffsets.size() - 1; ++line) {
+            if (onlyIndexedLines &&
+                !(line + 1 < indexedLines_.size() && indexedLines_[line + 1]))
+                continue;
             addLine.reset()
                     .bindInt64(":line", line + 1)
                     .bindInt64(":offset", lineOffsets[line])
@@ -858,19 +867,6 @@ INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
                                lineOffsets[line + 1] - lineOffsets[line])
                     .step();
             progress.update<size_t>(line, lineOffsets.size() - 1);
-        }
-        if (sparseLineOffsets_) {
-            std::string sql("");
-            if (indexers.size() > 0) {
-                for (auto &&pair : indexers) {
-                    if (sql.size() != 0) {
-                        sql += " UNION ";
-                    }
-                    sql += ("select line from " + pair.first);
-                }
-                db.exec("DELETE FROM LineOffsets where line not in (" + sql +
-                        ")");
-            }
         }
         log.info("Flushing");
         db.exec(R"(END TRANSACTION)");
@@ -941,6 +937,11 @@ INSERT INTO )" + table + R"( VALUES(:key, :line, :offset)
         bool consumed = false;
         for (auto &&pair : indexers) {
             consumed |= pair.second->onLine(lineNumber, line, length);
+        }
+        if (sparseLineOffsets_ && consumed) {
+            if (indexedLines_.size() <= lineNumber)
+                indexedLines_.resize(lineNumber + 1);
+            indexedLines_[lineNumber] = true;
         }
 
         return consumed || saveAllLines_;
