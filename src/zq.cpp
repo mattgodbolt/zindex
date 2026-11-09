@@ -27,6 +27,7 @@ struct PrintSink : LineSink {
     }
 };
 
+
 struct PrintHandler : RangeFetcher::Handler {
     Index &index;
     LineSink &sink;
