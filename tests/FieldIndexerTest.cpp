@@ -54,3 +54,10 @@ TEST_CASE("delimiter escapes", "[FieldIndexer]") {
     CHECK(unescapeDelimiter("a\\t") == "a\\t");
     CHECK(unescapeDelimiter("") == "");
 }
+
+TEST_CASE("escaped tab delimiter splits on tabs", "[FieldIndexer]") {
+    CaptureSink sink;
+    FieldIndexer indexer(unescapeDelimiter("\\t"), 2);
+    indexer.index(sink, "a\tb\tc");
+    CHECK(sink.captured == vs({"b"}));
+}

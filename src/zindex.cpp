@@ -72,7 +72,7 @@ int Main(int argc, const char *argv[]) {
                                 false, "", "indexes", cmd);
     ValueArg<string> delimiterArg("d", "delimiter",
                                   "Use <delim> as the field delimiter "
-                                  "(the two characters \\t mean a tab)",
+                                  "(\\t, as typed, means a tab)",
                                   false, " ", "delim", cmd);
     SwitchArg tabDelimiterArg("", "tab-delimiter",
                               "Use a tab character as the field delimiter",
