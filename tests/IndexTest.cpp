@@ -2,7 +2,7 @@
 #include "RegExpIndexer.h"
 #include "Index.h"
 
-#include "catch.hpp"
+#include <catch2/catch_test_macros.hpp>
 #include "TempDir.h"
 #include "LineSink.h"
 #include "CaptureLog.h"
@@ -116,7 +116,7 @@ TEST_CASE("indexes files", "[Index]") {
 
         auto CheckLine = [&](uint64_t line, const string &expected, bool exists, bool indexed, const string &indexName) {
             auto message = " line:"+to_string(line) + " " + expected;
-            SCOPED_INFO(message);
+            INFO(message);
             CaptureSink cs;
             index.queryIndex(indexName, to_string(line), cs);
             REQUIRE(cs.captured.size() == (indexed ? 1 : 0));

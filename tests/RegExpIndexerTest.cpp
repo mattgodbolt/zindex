@@ -1,7 +1,7 @@
 #include <fstream>
 #include "RegExpIndexer.h"
 
-#include "catch.hpp"
+#include <catch2/catch_test_macros.hpp>
 #include "CaptureSink.h"
 
 using vs = std::vector<std::string>;

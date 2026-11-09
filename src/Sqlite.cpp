@@ -155,7 +155,11 @@ std::string Sqlite::toFile(const std::string &uri) {
     if (!uriRegex.exec(uri, matches)) {
         return uri;
     }
-
+    // A plain path has no scheme, so the optional scheme group is unset and
+    // RegExp::exec() stops reporting groups before it.
+    if (matches.size() < 2) {
+        return uri;
+    }
     auto protocol = matches[1];
     auto result = std::string(uri.c_str() + protocol.first, protocol.second - protocol.first);
     if (result.find("file:") != 0) {
