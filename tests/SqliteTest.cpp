@@ -173,6 +173,9 @@ TEST_CASE("plain paths pass through uri conversion unchanged", "[Sqlite]") {
     REQUIRE(sqlite.toFile("data.db") == "data.db");
     REQUIRE(sqlite.toFile("/home/fred/data.db") == "/home/fred/data.db");
     REQUIRE(sqlite.toFile("relative/dir/data.db") == "relative/dir/data.db");
+    // Contains a colon, but no scheme: this gets past a naive "no colon" check.
+    REQUIRE(sqlite.toFile("relative/dir:name/data.db") ==
+            "relative/dir:name/data.db");
 }
 
 TEST_CASE("uri convert to file", "[Sqlite]") {
