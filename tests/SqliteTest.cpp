@@ -29,6 +29,19 @@ TEST_CASE("opens databases", "[Sqlite]") {
     }
 }
 
+TEST_CASE("opens file: URIs read-only", "[Sqlite]") {
+    TempDir tempDir;
+    CaptureLog log;
+    Sqlite sqlite(log);
+    auto dbPath = tempDir.path + "/db.sqlite";
+    auto uri = "file:" + dbPath;
+    sqlite.open(uri, false);
+    sqlite.close();
+
+    Sqlite readOnly(log);
+    readOnly.open(uri, true);
+}
+
 TEST_CASE("prepares statements", "[Sqlite]") {
     TempDir tempDir;
     CaptureLog log;
