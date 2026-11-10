@@ -485,6 +485,11 @@ FROM AccessPoints WHERE uncompressedOffset = :offset)");
         // decode a line do we save it in the cachedContext_ for a subsequent
         // call.
         constexpr auto MaxLength = (64u * 1024 * 1024) - 1;
+        // Without line offset data we count lines forward from the access
+        // point, so must start decoding exactly there. The cached context is
+        // positioned after whichever line was last decoded, so can't be used.
+        if (length == 0)
+            cachedContext_.reset();
         std::unique_ptr<CachedContext> context = resetContext(
                 offset != 0 ? offset : uncompressedOffset - 1, compressedOffset,
                 uncompressedOffset, bitOffset, windowData);
