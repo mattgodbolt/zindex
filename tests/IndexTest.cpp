@@ -9,6 +9,8 @@
 #include <FieldIndexer.h>
 #include <Index.h>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_exception.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <unordered_map>
@@ -557,14 +559,13 @@ TEST_CASE("metadata tests", "[Index]") {
                     break;
             }
             SECTION("fails without force") {
-                try {
-                    Index::load(log, File(fopen(testFile.c_str(), "rb")),
-                                testFile + ".zindex", false);
-                    FAIL("Should have thrown");
-                } catch (const exception &e) {
-                    CHECK(string(e.what()) == "Compressed file has been "
-                                              "modified since index was built");
-                }
+                REQUIRE_THROWS_MATCHES(
+                        Index::load(log, File(fopen(testFile.c_str(), "rb")),
+                                    testFile + ".zindex", false),
+                        exception,
+                        Catch::Matchers::MessageMatches(Catch::Matchers::Equals(
+                                "Compressed file has been "
+                                "modified since index was built")));
             }
             SECTION("loads with force") {
                 Index::load(log, File(fopen(testFile.c_str(), "rb")),
@@ -577,14 +578,13 @@ TEST_CASE("metadata tests", "[Index]") {
                 fputc(0, corrupter.get());
             }
             SECTION("fails without force") {
-                try {
-                    Index::load(log, File(fopen(testFile.c_str(), "rb")),
-                                testFile + ".zindex", false);
-                    FAIL("Should have thrown");
-                } catch (const exception &e) {
-                    CHECK(string(e.what()) ==
-                          "Compressed size changed since index was built");
-                }
+                REQUIRE_THROWS_MATCHES(
+                        Index::load(log, File(fopen(testFile.c_str(), "rb")),
+                                    testFile + ".zindex", false),
+                        exception,
+                        Catch::Matchers::MessageMatches(Catch::Matchers::Equals(
+                                "Compressed size changed since index was "
+                                "built")));
             }
             SECTION("loads with force") {
                 Index::load(log, File(fopen(testFile.c_str(), "rb")),
