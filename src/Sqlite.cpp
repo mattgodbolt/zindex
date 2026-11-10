@@ -102,7 +102,9 @@ int64_t Sqlite::Statement::columnInt64(int index) const {
 }
 
 std::string Sqlite::Statement::columnString(int index) const {
-    return (const char *)sqlite3_column_text(statement_, index);
+    // NULL columns come back as a null pointer; treat them as empty.
+    auto text = (const char *)sqlite3_column_text(statement_, index);
+    return text ? text : "";
 }
 
 int Sqlite::Statement::columnCount() const {

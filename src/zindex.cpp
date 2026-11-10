@@ -111,6 +111,10 @@ int Main(int argc, const char *argv[]) {
         auto outputFile = indexFilename.isSet()
                                   ? indexFilename.getValue()
                                   : inputFile.getValue() + ".zindex";
+        // Constructing the builder replaces any existing index file, so make
+        // sure the configuration is usable first.
+        if (configFile.isSet())
+            IndexParser(configFile.getValue()).checkNames();
         Index::Builder builder(log, std::move(in), realPath, outputFile);
         if (skipFirst.isSet())
             builder.skipFirst(skipFirst.getValue());

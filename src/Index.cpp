@@ -12,6 +12,7 @@
 #include "PrettyBytes.h"
 #include "StringView.h"
 #include <algorithm>
+#include <cctype>
 #include <cstdint>
 #include <cstring>
 #include <iostream>
@@ -22,6 +23,8 @@
 #include <unistd.h>
 #include <unordered_map>
 #include <vector>
+
+static bool hasOnlyIdentifierChars(const std::string &name);
 
 namespace {
 
@@ -379,6 +382,43 @@ LIMIT 1)")) {
         return true;
     }
 
+    // Looks the name up in the Indexes table, matching case-insensitively as
+    // SQLite does for table names, and returns the stored spelling. This gives
+    // a useful message for a missing index and means an arbitrary -i value
+    // never reaches SQL.
+    std::string resolveIndex(const std::string &index) const {
+        auto names = db_.prepare("SELECT name FROM Indexes ORDER BY name");
+        std::string available;
+        std::string found;
+        bool matched = false;
+        while (!names.step()) {
+            // Master stored a NULL for `"name": ""`, whose table is `index_`.
+            auto name = names.columnString(0);
+            if (!matched && Index::sameIndexName(name, index)) {
+                matched = true;
+                found = name;
+            }
+            available += (available.empty() ? "" : ", ") +
+                         (name.empty() ? std::string("''") : name);
+        }
+        if (!matched) {
+            throw std::runtime_error(
+                    "index file has no index named '" + index + "'; " +
+                    (available.empty() ? std::string("it contains no indexes")
+                                       : "it contains: " + available +
+                                                 " (use -i <name>)"));
+        }
+        // The stored name is spliced into SQL, and the file could have been
+        // edited; the empty name is legal here as master could build it.
+        if (!hasOnlyIdentifierChars(found)) {
+            throw std::runtime_error("index file has an index with an "
+                                     "unusable name '" +
+                                     found + "'; refusing to query it");
+        }
+        return found;
+    }
+
+    // `index` must already have been through resolveIndex.
     size_t queryIndex(const std::string &index, const std::string &query,
                       LineFunction lineFunc) {
         auto stmt = db_.prepare(R"(
@@ -409,7 +449,7 @@ WHERE key = :query
     }
 
     size_t indexSize(const std::string &index) const {
-        return tableSize("index_" + index);
+        return tableSize("index_" + resolveIndex(index));
     }
 
     size_t tableSize(const std::string &name) const {
@@ -687,6 +727,7 @@ struct Index::Builder::Impl : LineSink {
     std::unordered_map<std::string, std::unique_ptr<IndexHandler>> indexers;
     bool saveAllLines_;
     bool sparseLineOffsets_;
+    std::vector<std::pair<std::string, Index::IndexConfig>> added_;
     // Only populated when sparseLineOffsets_ is set: indexedLines_[n] is true
     // if line n produced at least one index key. n is the 1-based number
     // passed to onLine() (LineFinder passes lineOffsets_.size() + 1), which in
@@ -927,6 +968,8 @@ INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
         // once
         saveAllLines_ |= !config.sparse;
         sparseLineOffsets_ |= config.sparseLineOffsets;
+        added_.emplace_back(name, config);
+        Index::checkIndexNames(added_);
         auto table = "index_" + name;
         std::string type = config.numeric ? "INTEGER" : "TEXT";
         if (config.unique)
@@ -1040,15 +1083,16 @@ size_t Index::getLines(const std::vector<uint64_t> &lines, LineSink &sink) {
 
 size_t Index::queryIndex(const std::string &index, const std::string &query,
                          LineFunction lineFunction) {
-    return impl_->queryIndex(index, query, lineFunction);
+    return impl_->queryIndex(impl_->resolveIndex(index), query, lineFunction);
 }
 
 size_t Index::queryIndexMulti(const std::string &index,
                               const std::vector<std::string> &queries,
                               LineFunction lineFunction) {
     size_t result = 0;
+    auto resolved = impl_->resolveIndex(index);
     for (auto query : queries)
-        result += impl_->queryIndex(index, query, lineFunction);
+        result += impl_->queryIndex(resolved, query, lineFunction);
     return result;
 }
 
@@ -1074,4 +1118,70 @@ const Index::Metadata &Index::getMetadata() const {
 Index::LineFunction Index::sinkFetch(LineSink &sink) {
     return std::function<void(size_t)>(
             [this, &sink](size_t line) { this->getLine(line, sink); });
+}
+
+bool Index::sameIndexName(const std::string &a, const std::string &b) {
+    // SQLite folds only ASCII case in identifiers.
+    return a.size() == b.size() &&
+           std::equal(a.begin(), a.end(), b.begin(),
+                      [](unsigned char x, unsigned char y) {
+                          auto fold = [](unsigned char c) {
+                              return (c >= 'A' && c <= 'Z') ? c + 32 : c;
+                          };
+                          return fold(x) == fold(y);
+                      });
+}
+
+// Names SQLite accepts unquoted in an identifier: ASCII letters, digits, '_',
+// '$' and any non-ASCII byte. The name is spliced into SQL unquoted, so
+// anything else must never get that far (this also rules out injection).
+static bool hasOnlyIdentifierChars(const std::string &name) {
+    return std::all_of(name.begin(), name.end(), [](unsigned char c) {
+        return std::isalnum(c) || c == '_' || c == '$' || c >= 0x80;
+    });
+}
+
+void Index::checkIndexNames(
+        const std::vector<std::pair<std::string, IndexConfig>> &indexes) {
+    for (const auto &index : indexes) {
+        const auto &name = index.first;
+        if (name.empty() || !hasOnlyIdentifierChars(name)) {
+            throw std::runtime_error(
+                    "Invalid index name '" + name +
+                    "': names must be non-empty and contain only letters, "
+                    "digits, '_', '$' and non-ASCII characters");
+        }
+    }
+    // SQLite object names are case-insensitive, and tables and SQL indexes
+    // share one namespace.
+    struct Object {
+        std::string sqlName;
+        size_t owner;
+    };
+    std::vector<Object> objects;
+    for (size_t i = 0; i < indexes.size(); ++i) {
+        auto table = "index_" + indexes[i].first;
+        objects.push_back({table, i});
+        if (indexes[i].second.indexLineOffsets)
+            objects.push_back({table + "_line_index", i});
+        if (!indexes[i].second.unique)
+            objects.push_back({table + "_key_index", i});
+    }
+    for (size_t i = 0; i < objects.size(); ++i)
+        for (size_t j = i + 1; j < objects.size(); ++j) {
+            if (objects[i].owner == objects[j].owner ||
+                !sameIndexName(objects[i].sqlName, objects[j].sqlName))
+                continue;
+            const auto &a = indexes[objects[i].owner].first;
+            const auto &b = indexes[objects[j].owner].first;
+            if (sameIndexName(a, b))
+                throw std::runtime_error(
+                        "Index names '" + a + "' and '" + b +
+                        "' differ only by case (or are repeated); names must "
+                        "be distinct");
+            throw std::runtime_error(
+                    "Index '" + a + "' creates '" + objects[i].sqlName +
+                    "', which clashes with '" + objects[j].sqlName +
+                    "' from index '" + b + "'; rename one of them");
+        }
 }

@@ -6,19 +6,55 @@
 #include <iostream>
 #include <stdexcept>
 
-void IndexParser::buildIndexes(Index::Builder *builder, ConsoleLog &log) {
+IndexParser::JsonPtr IndexParser::parseConfig() const {
     std::ifstream in(fileName_, std::ifstream::in);
     std::string contents((std::istreambuf_iterator<char>(in)),
                          std::istreambuf_iterator<char>());
-    cJSON *root = cJSON_Parse(contents.c_str());
+    JsonPtr root(cJSON_Parse(contents.c_str()), &cJSON_Delete);
     if (root == nullptr) {
         throw std::runtime_error("Could not parse the json config file. "
                                  "Careful, this is a strict parser.");
     }
-    if (!cJSON_HasObjectItem(root, "indexes")) {
+    if (!cJSON_HasObjectItem(root.get(), "indexes")) {
         throw std::runtime_error("No indexes to be found in the config file.");
     }
-    cJSON *indexes = cJSON_GetObjectItem(root, "indexes");
+    return root;
+}
+
+void IndexParser::checkNames() {
+    auto root = parseConfig();
+    cJSON *indexes = cJSON_GetObjectItem(root.get(), "indexes");
+    std::vector<std::pair<std::string, Index::IndexConfig>> specs;
+    auto arraySize = cJSON_GetArraySize(indexes);
+    for (int i = 0; i < arraySize; i++) {
+        auto *index = cJSON_GetArrayItem(indexes, i);
+        specs.emplace_back(nameOf(index), configOf(index));
+    }
+    Index::checkIndexNames(specs);
+}
+
+Index::IndexConfig IndexParser::configOf(cJSON *index) const {
+    Index::IndexConfig config{};
+    config.numeric = getBoolean(index, "numeric");
+    config.unique = getBoolean(index, "unique");
+    config.sparse = getBoolean(index, "sparse");
+    config.indexLineOffsets = getBoolean(index, "indexLineOffsets");
+    config.sparseLineOffsets = getBoolean(index, "sparseLineOffsets");
+    return config;
+}
+
+std::string IndexParser::nameOf(cJSON *index) const {
+    if (!cJSON_HasObjectItem(index, "name"))
+        return "default";
+    auto *name = cJSON_GetObjectItem(index, "name");
+    if (name->type != cJSON_String || name->valuestring == nullptr)
+        throw std::runtime_error("An index's \"name\" must be a string");
+    return name->valuestring;
+}
+
+void IndexParser::buildIndexes(Index::Builder *builder, ConsoleLog &log) {
+    auto root = parseConfig();
+    cJSON *indexes = cJSON_GetObjectItem(root.get(), "indexes");
     auto arraySize = cJSON_GetArraySize(indexes);
     for (int i = 0; i < arraySize; i++) {
         parseIndex(cJSON_GetArrayItem(indexes, i), builder, log);
@@ -31,17 +67,9 @@ void IndexParser::parseIndex(cJSON *index, Index::Builder *builder,
         throw std::runtime_error(
                 "All indexes must have a type field, i.e. Regex, Field, ");
     }
-    std::string indexName = "default";
-    if (cJSON_HasObjectItem(index, "name")) {
-        indexName = cJSON_GetObjectItem(index, "name")->valuestring;
-    }
+    std::string indexName = nameOf(index);
     std::string type = cJSON_GetObjectItem(index, "type")->valuestring;
-    Index::IndexConfig config{};
-    config.numeric = getBoolean(index, "numeric");
-    config.unique = getBoolean(index, "unique");
-    config.sparse = getBoolean(index, "sparse");
-    config.indexLineOffsets = getBoolean(index, "indexLineOffsets");
-    config.sparseLineOffsets = getBoolean(index, "sparseLineOffsets");
+    Index::IndexConfig config = configOf(index);
 
     if (type == "regex") {
         auto regex = getOrThrowStr(index, "regex");

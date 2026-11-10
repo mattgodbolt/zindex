@@ -18,6 +18,7 @@
 #include <zlib.h>
 
 using namespace std;
+using Catch::Matchers::ContainsSubstring;
 
 namespace {
 
@@ -931,5 +932,188 @@ TEST_CASE("indexes line offsets when there are no indexers", "[Index]") {
         CaptureSink cs;
         CHECK_THROWS(index.queryIndex("default", "1", cs));
         CHECK(cs.captured.empty());
+    }
+}
+
+TEST_CASE("index names are validated and missing indexes explained",
+          "[Index]") {
+    TempDir tempDir;
+    CaptureLog log;
+    auto testFile = tempDir.path + "/names.log";
+    {
+        ofstream fileOut(testFile);
+        fileOut << "a 1\nb 2\n";
+    }
+    REQUIRE(system(("gzip -f " + testFile).c_str()) == 0);
+    testFile += ".gz";
+
+    auto makeBuilder = [&] {
+        return Index::Builder(log, File(fopen(testFile.c_str(), "rb")),
+                              testFile, testFile + ".zindex");
+    };
+    auto addNamed = [&](Index::Builder &builder, const std::string &name) {
+        builder.addIndexer(name, "blah", Index::IndexConfig(),
+                           std::make_unique<FieldIndexer>(" ", 1));
+    };
+
+    SECTION("names that are not plain identifiers are rejected clearly") {
+        for (const char *bad : {"my-idx", "two words", "", "a;b", "x\"y"}) {
+            auto builder = makeBuilder();
+            INFO("name '" << bad << "'");
+            CHECK_THROWS_WITH(addNamed(builder, bad),
+                              ContainsSubstring("Invalid index name") &&
+                                      !ContainsSubstring("CREATE TABLE") &&
+                                      !ContainsSubstring("syntax"));
+        }
+    }
+
+    SECTION("letters, digits and underscores are accepted") {
+        auto builder = makeBuilder();
+        CHECK_NOTHROW(addNamed(builder, "Ok_name_9"));
+    }
+
+    SECTION("querying a missing index lists the ones that exist") {
+        auto builder = makeBuilder();
+        addNamed(builder, "first");
+        addNamed(builder, "second");
+        builder.build();
+        auto index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
+                                 testFile + ".zindex", false);
+        CaptureSink cs;
+        CHECK_THROWS_WITH(
+                index.queryIndex("default", "a", cs),
+                ContainsSubstring("index file has no index named 'default'") &&
+                        ContainsSubstring("first, second") &&
+                        ContainsSubstring("-i") &&
+                        !ContainsSubstring("no such table"));
+        // Names never reach SQL unchecked.
+        CHECK_THROWS_WITH(
+                index.queryIndex("first; DROP TABLE x", "a", cs),
+                ContainsSubstring("no index named 'first; DROP TABLE x'"));
+        CHECK(index.queryIndex("first", "a", cs) == 1);
+    }
+
+    SECTION("an index with no indexers says there are none") {
+        auto builder = makeBuilder();
+        builder.build();
+        auto index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
+                                 testFile + ".zindex", false);
+        CaptureSink cs;
+        CHECK_THROWS_WITH(index.queryIndex("default", "a", cs),
+                          ContainsSubstring("no index named 'default'") &&
+                                  ContainsSubstring("no indexes"));
+    }
+
+    SECTION("index names are matched case-insensitively like SQLite tables") {
+        auto builder = makeBuilder();
+        addNamed(builder, "First");
+        builder.build();
+        auto index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
+                                 testFile + ".zindex", false);
+        CaptureSink cs;
+        CHECK(index.queryIndex("first", "a", cs) == 1);
+        CHECK(index.queryIndexMulti("FIRST", {"a", "b"}, cs) == 2);
+    }
+
+    SECTION("names SQLite accepts unquoted still work") {
+        auto builder = makeBuilder();
+        addNamed(builder, "caf\xc3\xa9");
+        addNamed(builder, "a$b");
+        builder.build();
+        auto index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
+                                 testFile + ".zindex", false);
+        CaptureSink cs;
+        CHECK(index.queryIndex("caf\xc3\xa9", "a", cs) == 1);
+        CHECK(index.queryIndex("a$b", "b", cs) == 1);
+        CHECK(index.indexSize("a$b") == 2);
+    }
+
+    SECTION("names differing only by case are a clear error") {
+        auto builder = makeBuilder();
+        addNamed(builder, "a");
+        CHECK_THROWS_WITH(addNamed(builder, "A"),
+                          ContainsSubstring("differ only by case") &&
+                                  !ContainsSubstring("CREATE TABLE"));
+    }
+
+    SECTION("indexSize does not splice unchecked names into SQL") {
+        auto builder = makeBuilder();
+        addNamed(builder, "first");
+        builder.build();
+        auto index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
+                                 testFile + ".zindex", false);
+        CHECK(index.indexSize("first") == 2);
+        CHECK_THROWS_WITH(index.indexSize("first; DROP TABLE x"),
+                          ContainsSubstring("no index named"));
+    }
+
+    SECTION("an old index with a NULL index name still works") {
+        {
+            auto builder = makeBuilder();
+            addNamed(builder, "first");
+            addNamed(builder, "two");
+            builder.build();
+        }
+        {
+            Sqlite db(log);
+            db.open(testFile + ".zindex", false);
+            // What master stored for `"name": ""`: a NULL name and a table
+            // called plain `index_`.
+            db.exec("UPDATE Indexes SET name = NULL WHERE name = 'first'");
+            db.exec("ALTER TABLE index_first RENAME TO index_");
+        }
+        auto index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
+                                 testFile + ".zindex", false);
+        CaptureSink cs;
+        CHECK(index.queryIndex("two", "a", cs) == 1);
+        CHECK(index.queryIndex("", "a", cs) == 1);
+        CHECK(index.indexSize("") == 2);
+        CHECK_THROWS_WITH(index.queryIndex("nope", "a", cs),
+                          ContainsSubstring("'', two"));
+    }
+
+    SECTION("a hand-crafted index name never reaches SQL") {
+        {
+            auto builder = makeBuilder();
+            addNamed(builder, "two");
+            builder.build();
+        }
+        {
+            Sqlite db(log);
+            db.open(testFile + ".zindex", false);
+            db.exec("UPDATE Indexes SET name = 'two where 0; select 1 --'");
+        }
+        auto index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
+                                 testFile + ".zindex", false);
+        CaptureSink cs;
+        CHECK_THROWS_WITH(index.queryIndex("two where 0; select 1 --", "a", cs),
+                          ContainsSubstring("unusable"));
+    }
+
+    SECTION("long and mixed-case names still work") {
+        auto builder = makeBuilder();
+        addNamed(builder, std::string(5000, 'x'));
+        addNamed(builder, "DEFAULT");
+        builder.build();
+        auto index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
+                                 testFile + ".zindex", false);
+        CaptureSink cs;
+        CHECK(index.queryIndex(std::string(5000, 'x'), "a", cs) == 1);
+        CHECK(index.queryIndex("default", "a", cs) == 1);
+    }
+
+    SECTION("SQL objects derived from one name cannot clash with another") {
+        auto builder = makeBuilder();
+        builder.addIndexer("a", "blah",
+                           Index::IndexConfig().withIndexLineOffsets(true),
+                           std::make_unique<FieldIndexer>(" ", 1));
+        for (const char *clash : {"a_line_index", "A_LINE_INDEX"}) {
+            INFO(clash);
+            CHECK_THROWS_WITH(addNamed(builder, clash),
+                              ContainsSubstring("clashes") &&
+                                      !ContainsSubstring("CREATE TABLE"));
+        }
+        CHECK_THROWS_WITH(addNamed(builder, "a_key_index"),
+                          ContainsSubstring("clashes"));
     }
 }
