@@ -90,6 +90,28 @@ TEST_CASE("pipelined external indexer copes with buffering commands",
         CHECK(sink.captured == vs(5, giant));
         CHECK(sink.capturedLines == std::vector<uint64_t>({1, 2, 3, 4, 5}));
     }
+    SECTION("A second command does not hold the first one's input open") {
+        // Several indexers can be live at once (one per pipe in a config
+        // file), and whichever is finished first must see EOF on its own.
+        ExternalIndexer first(log, BufferingCommand, " ", true);
+        ExternalIndexer second(log, BufferingCommand, " ", true);
+        CaptureSink secondSink;
+        first.index(sink, "one");
+        second.index(secondSink, "two");
+        first.finish(sink);
+        second.finish(secondSink);
+        CHECK(sink.captured == vs({"ONE"}));
+        CHECK(secondSink.captured == vs({"TWO"}));
+    }
+    SECTION("A multi-character delimiter") {
+        ExternalIndexer indexer(log, "cat", "::", true);
+        indexer.index(sink, "a::bb::ccc");
+        indexer.index(sink, "no delimiter here");
+        indexer.index(sink, "trailing::");
+        indexer.finish(sink);
+        CHECK(sink.captured ==
+              vs({"a", "bb", "ccc", "no delimiter here", "trailing"}));
+    }
     SECTION("Well-behaved commands still work") {
         ExternalIndexer indexer(log, "cat", " ", true);
         sink.setLine(7);

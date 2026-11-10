@@ -1,4 +1,5 @@
 #include <errno.h>
+#include <fcntl.h>
 #include <stdexcept>
 #include <string>
 #include <unistd.h>
@@ -9,6 +10,11 @@ Pipe::Pipe() : pipeFds_{-1, -1} {
     if (pipe(pipeFds_) == -1)
         throw std::runtime_error("Unable to create a pipe: " +
                                  std::to_string(errno)); // TODO: errno
+    // Otherwise a child forked later (another --pipe command) keeps these
+    // ends open, and the child they belong to never sees EOF. dup2() clears
+    // the flag on the copies a child makes for its stdin and stdout.
+    for (int fd : pipeFds_)
+        fcntl(fd, F_SETFD, FD_CLOEXEC);
 }
 
 Pipe::~Pipe() {

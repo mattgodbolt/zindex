@@ -69,11 +69,14 @@ void ExternalIndexer::addKeys(IndexSink &sink, const char *ptr,
     while (ptr < end) {
         auto nextSep = static_cast<const char *>(
                 memmem(ptr, end - ptr, separator_.c_str(), separator_.size()));
-        if (!nextSep)
+        const bool last = !nextSep;
+        if (last)
             nextSep = end;
         auto length = nextSep - ptr;
         if (length)
             sink.add(StringView(ptr, length), 0); // TODO: offset
+        if (last)
+            break; // Stepping over a separator that isn't there is past end.
         ptr = nextSep + separator_.size();
     }
 }
@@ -222,7 +225,6 @@ ExternalIndexer::~ExternalIndexer() {
         log_.debug("Waiting on child");
         waitpid(childPid_, &status, 0);
         log_.debug("Child exited");
-        signal(SIGCHLD, SIG_DFL);
         signal(SIGPIPE, SIG_DFL);
     }
 }
