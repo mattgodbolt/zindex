@@ -160,6 +160,14 @@ public:
         void build();
     };
 
+    // Throws if any of the names cannot be used as an index name, or if two
+    // collide (index names are case-insensitive). Called by the builder, and
+    // available so callers can check before touching an existing index file.
+    static void checkIndexNames(const std::vector<std::string> &names);
+
+    // True if the names are the same index (ASCII case-insensitive).
+    static bool sameIndexName(const std::string &a, const std::string &b);
+
     // Load an existing index. forceLoad will load the index even if it appears
     // not to match the underlying compressed file.
     static Index load(Log &log, File &&fromCompressed,

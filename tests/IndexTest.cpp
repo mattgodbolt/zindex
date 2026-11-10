@@ -705,14 +705,16 @@ TEST_CASE("index names are validated and missing indexes explained",
         auto index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
                                  testFile + ".zindex", false);
         CaptureSink cs;
-        CHECK_THROWS_WITH(index.queryIndex("default", "a", cs),
-                          ContainsSubstring("no 'default' index") &&
-                                  ContainsSubstring("first, second") &&
-                                  ContainsSubstring("-i") &&
-                                  !ContainsSubstring("no such table"));
+        CHECK_THROWS_WITH(
+                index.queryIndex("default", "a", cs),
+                ContainsSubstring("index file has no index named 'default'") &&
+                        ContainsSubstring("first, second") &&
+                        ContainsSubstring("-i") &&
+                        !ContainsSubstring("no such table"));
         // Names never reach SQL unchecked.
-        CHECK_THROWS_WITH(index.queryIndex("first; DROP TABLE x", "a", cs),
-                          ContainsSubstring("no 'first; DROP TABLE x' index"));
+        CHECK_THROWS_WITH(
+                index.queryIndex("first; DROP TABLE x", "a", cs),
+                ContainsSubstring("no index named 'first; DROP TABLE x'"));
         CHECK(index.queryIndex("first", "a", cs) == 1);
     }
 
@@ -723,7 +725,68 @@ TEST_CASE("index names are validated and missing indexes explained",
                                  testFile + ".zindex", false);
         CaptureSink cs;
         CHECK_THROWS_WITH(index.queryIndex("default", "a", cs),
-                          ContainsSubstring("no 'default' index") &&
+                          ContainsSubstring("no index named 'default'") &&
                                   ContainsSubstring("no indexes"));
+    }
+
+    SECTION("index names are matched case-insensitively like SQLite tables") {
+        auto builder = makeBuilder();
+        addNamed(builder, "First");
+        builder.build();
+        auto index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
+                                 testFile + ".zindex", false);
+        CaptureSink cs;
+        CHECK(index.queryIndex("first", "a", cs) == 1);
+        CHECK(index.queryIndexMulti("FIRST", {"a", "b"}, cs) == 2);
+    }
+
+    SECTION("names SQLite accepts unquoted still work") {
+        auto builder = makeBuilder();
+        addNamed(builder, "caf\xc3\xa9");
+        addNamed(builder, "a$b");
+        builder.build();
+        auto index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
+                                 testFile + ".zindex", false);
+        CaptureSink cs;
+        CHECK(index.queryIndex("caf\xc3\xa9", "a", cs) == 1);
+        CHECK(index.queryIndex("a$b", "b", cs) == 1);
+        CHECK(index.indexSize("a$b") == 2);
+    }
+
+    SECTION("names differing only by case are a clear error") {
+        auto builder = makeBuilder();
+        addNamed(builder, "a");
+        CHECK_THROWS_WITH(addNamed(builder, "A"),
+                          ContainsSubstring("differ only by case") &&
+                                  !ContainsSubstring("CREATE TABLE"));
+    }
+
+    SECTION("indexSize does not splice unchecked names into SQL") {
+        auto builder = makeBuilder();
+        addNamed(builder, "first");
+        builder.build();
+        auto index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
+                                 testFile + ".zindex", false);
+        CHECK(index.indexSize("first") == 2);
+        CHECK_THROWS_WITH(index.indexSize("first; DROP TABLE x"),
+                          ContainsSubstring("no index named"));
+    }
+
+    SECTION("an old index with a NULL index name still works") {
+        {
+            auto builder = makeBuilder();
+            addNamed(builder, "first");
+            addNamed(builder, "two");
+            builder.build();
+        }
+        {
+            Sqlite db(log);
+            db.open(testFile + ".zindex", false);
+            db.exec("UPDATE Indexes SET name = NULL WHERE name = 'first'");
+        }
+        auto index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
+                                 testFile + ".zindex", false);
+        CaptureSink cs;
+        CHECK(index.queryIndex("two", "a", cs) == 1);
     }
 }

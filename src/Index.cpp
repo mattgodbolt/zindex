@@ -373,25 +373,38 @@ LIMIT 1)")) {
         return true;
     }
 
-    size_t queryIndex(const std::string &index, const std::string &query,
-                      LineFunction lineFunc) {
-        // Checking against the Indexes table gives a useful message, and means
-        // an arbitrary -i value never reaches the SQL below.
-        auto names = db_.prepare("SELECT name FROM Indexes ORDER BY name");
+    // Looks the name up in the Indexes table, matching case-insensitively as
+    // SQLite does for table names, and returns the stored spelling. This gives
+    // a useful message for a missing index and means an arbitrary -i value
+    // never reaches SQL. (Old files can hold NULL names; those are skipped.)
+    std::string resolveIndex(const std::string &index) const {
+        auto names = db_.prepare(
+                "SELECT name FROM Indexes WHERE name IS NOT NULL ORDER BY "
+                "name");
         std::string available;
-        bool found = false;
+        std::string found;
+        bool matched = false;
         while (!names.step()) {
             auto name = names.columnString(0);
-            found |= name == index;
+            if (!matched && Index::sameIndexName(name, index)) {
+                matched = true;
+                found = name;
+            }
             available += (available.empty() ? "" : ", ") + name;
         }
-        if (!found) {
+        if (!matched) {
             throw std::runtime_error(
-                    "This index has no '" + index + "' index; " +
+                    "index file has no index named '" + index + "'; " +
                     (available.empty() ? std::string("it contains no indexes")
                                        : "it contains: " + available +
                                                  " (use -i <name>)"));
         }
+        return found;
+    }
+
+    // `index` must already have been through resolveIndex.
+    size_t queryIndex(const std::string &index, const std::string &query,
+                      LineFunction lineFunc) {
         auto stmt = db_.prepare(R"(
 SELECT line FROM index_)" + index +
                                 R"(
@@ -420,7 +433,7 @@ WHERE key = :query
     }
 
     size_t indexSize(const std::string &index) const {
-        return tableSize("index_" + index);
+        return tableSize("index_" + resolveIndex(index));
     }
 
     size_t tableSize(const std::string &name) const {
@@ -674,6 +687,7 @@ struct Index::Builder::Impl : LineSink {
     std::unordered_map<std::string, std::unique_ptr<IndexHandler>> indexers;
     bool saveAllLines_;
     bool sparseLineOffsets_;
+    std::vector<std::string> addedNames_;
     // Only populated when sparseLineOffsets_ is set: indexedLines_[n] is true
     // if line n produced at least one index key. n is the 1-based number
     // passed to onLine() (LineFinder passes lineOffsets_.size() + 1), which in
@@ -914,17 +928,8 @@ INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
         // once
         saveAllLines_ |= !config.sparse;
         sparseLineOffsets_ |= config.sparseLineOffsets;
-        // The name is spliced into SQL as part of a table name, so only allow
-        // characters that need no quoting (this also rules out injection).
-        if (name.empty() ||
-            !std::all_of(name.begin(), name.end(), [](unsigned char c) {
-                return std::isalnum(c) || c == '_';
-            })) {
-            throw std::runtime_error(
-                    "Invalid index name '" + name +
-                    "': names must be non-empty and contain only ASCII "
-                    "letters, digits and underscores");
-        }
+        addedNames_.push_back(name);
+        Index::checkIndexNames(addedNames_);
         auto table = "index_" + name;
         std::string type = config.numeric ? "INTEGER" : "TEXT";
         if (config.unique)
@@ -1038,15 +1043,16 @@ size_t Index::getLines(const std::vector<uint64_t> &lines, LineSink &sink) {
 
 size_t Index::queryIndex(const std::string &index, const std::string &query,
                          LineFunction lineFunction) {
-    return impl_->queryIndex(index, query, lineFunction);
+    return impl_->queryIndex(impl_->resolveIndex(index), query, lineFunction);
 }
 
 size_t Index::queryIndexMulti(const std::string &index,
                               const std::vector<std::string> &queries,
                               LineFunction lineFunction) {
     size_t result = 0;
+    auto resolved = impl_->resolveIndex(index);
     for (auto query : queries)
-        result += impl_->queryIndex(index, query, lineFunction);
+        result += impl_->queryIndex(resolved, query, lineFunction);
     return result;
 }
 
@@ -1072,4 +1078,41 @@ const Index::Metadata &Index::getMetadata() const {
 Index::LineFunction Index::sinkFetch(LineSink &sink) {
     return std::function<void(size_t)>(
             [this, &sink](size_t line) { this->getLine(line, sink); });
+}
+
+bool Index::sameIndexName(const std::string &a, const std::string &b) {
+    // SQLite folds only ASCII case in identifiers.
+    return a.size() == b.size() &&
+           std::equal(a.begin(), a.end(), b.begin(),
+                      [](unsigned char x, unsigned char y) {
+                          auto fold = [](unsigned char c) {
+                              return (c >= 'A' && c <= 'Z') ? c + 32 : c;
+                          };
+                          return fold(x) == fold(y);
+                      });
+}
+
+void Index::checkIndexNames(const std::vector<std::string> &names) {
+    // Names become part of an SQL table name that is never quoted, so allow
+    // exactly what SQLite takes in an unquoted identifier: ASCII letters,
+    // digits, '_', '$' and any non-ASCII byte. This also rules out injection.
+    for (const auto &name : names) {
+        if (name.empty() ||
+            !std::all_of(name.begin(), name.end(), [](unsigned char c) {
+                return std::isalnum(c) || c == '_' || c == '$' || c >= 0x80;
+            })) {
+            throw std::runtime_error(
+                    "Invalid index name '" + name +
+                    "': names must be non-empty and contain only letters, "
+                    "digits, '_', '$' and non-ASCII characters");
+        }
+    }
+    // SQLite table names are case-insensitive, so these would collide.
+    for (size_t i = 0; i < names.size(); ++i)
+        for (size_t j = i + 1; j < names.size(); ++j)
+            if (sameIndexName(names[i], names[j]))
+                throw std::runtime_error("Index names '" + names[i] +
+                                         "' and '" + names[j] +
+                                         "' differ only by case (or are "
+                                         "repeated); names must be distinct");
 }

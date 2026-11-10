@@ -43,7 +43,30 @@ echo '{"indexes":[{"type":"field","delimiter":" ","fieldNum":1,"name":"first"}]}
 "$ZINDEX" --config c.json n.gz
 expect_failure "it contains: first" "$ZQ" n.gz a
 [ "$("$ZQ" -i first n.gz a)" = "a 1" ] || { echo "FAIL: -i first"; exit 1; }
-expect_failure "no 'nope' index" "$ZQ" -i nope n.gz a
+expect_failure "no index named 'nope'" "$ZQ" -i nope n.gz a
+
+# A rejected config must leave a previously good index untouched.
+cp n.gz.zindex good.zindex
+for cfg in '"name":"my-idx"' '"name":"a"},{"type":"field","delimiter":" ","fieldNum":2,"name":"A"'; do
+    printf '{"indexes":[{"type":"field","delimiter":" ","fieldNum":1,%s}]}' \
+        "$cfg" >bad.json
+    expect_failure "ndex name" "$ZINDEX" --config bad.json -o n.gz
+    cmp good.zindex n.gz.zindex || {
+        echo "FAIL: rejected config damaged the existing index"
+        exit 1
+    }
+done
+
+# Names SQLite accepts unquoted keep working, and -i is case-insensitive.
+printf '{"indexes":[{"type":"field","delimiter":" ","fieldNum":1,"name":"caf\\u00e9"}]}' \
+    >u.json
+"$ZINDEX" --config u.json -o n.gz
+[ "$("$ZQ" -i "$(printf 'caf\303\251')" n.gz a)" = "a 1" ] || {
+    echo "FAIL: non-ASCII name"
+    exit 1
+}
+"$ZINDEX" --config c.json -o n.gz
+[ "$("$ZQ" -i FIRST n.gz a)" = "a 1" ] || { echo "FAIL: -i FIRST"; exit 1; }
 
 # An index built with no indexer has no named indexes at all.
 "$ZINDEX" -o n.gz

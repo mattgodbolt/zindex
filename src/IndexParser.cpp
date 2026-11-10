@@ -6,7 +6,7 @@
 #include <iostream>
 #include <stdexcept>
 
-void IndexParser::buildIndexes(Index::Builder *builder, ConsoleLog &log) {
+cJSON *IndexParser::parseConfig() const {
     std::ifstream in(fileName_, std::ifstream::in);
     std::string contents((std::istreambuf_iterator<char>(in)),
                          std::istreambuf_iterator<char>());
@@ -18,6 +18,28 @@ void IndexParser::buildIndexes(Index::Builder *builder, ConsoleLog &log) {
     if (!cJSON_HasObjectItem(root, "indexes")) {
         throw std::runtime_error("No indexes to be found in the config file.");
     }
+    return root;
+}
+
+void IndexParser::checkNames() {
+    cJSON *root = parseConfig();
+    cJSON *indexes = cJSON_GetObjectItem(root, "indexes");
+    std::vector<std::string> names;
+    auto arraySize = cJSON_GetArraySize(indexes);
+    for (int i = 0; i < arraySize; i++)
+        names.push_back(nameOf(cJSON_GetArrayItem(indexes, i)));
+    cJSON_Delete(root);
+    Index::checkIndexNames(names);
+}
+
+std::string IndexParser::nameOf(cJSON *index) const {
+    if (cJSON_HasObjectItem(index, "name"))
+        return cJSON_GetObjectItem(index, "name")->valuestring;
+    return "default";
+}
+
+void IndexParser::buildIndexes(Index::Builder *builder, ConsoleLog &log) {
+    cJSON *root = parseConfig();
     cJSON *indexes = cJSON_GetObjectItem(root, "indexes");
     auto arraySize = cJSON_GetArraySize(indexes);
     for (int i = 0; i < arraySize; i++) {
@@ -31,10 +53,7 @@ void IndexParser::parseIndex(cJSON *index, Index::Builder *builder,
         throw std::runtime_error(
                 "All indexes must have a type field, i.e. Regex, Field, ");
     }
-    std::string indexName = "default";
-    if (cJSON_HasObjectItem(index, "name")) {
-        indexName = cJSON_GetObjectItem(index, "name")->valuestring;
-    }
+    std::string indexName = nameOf(index);
     std::string type = cJSON_GetObjectItem(index, "type")->valuestring;
     Index::IndexConfig config{};
     config.numeric = getBoolean(index, "numeric");
