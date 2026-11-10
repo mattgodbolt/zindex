@@ -177,6 +177,8 @@ struct IndexHandler : IndexSink {
     void finish() {
         try {
             indexer->finish(*this);
+        } catch (const LineError &e) {
+            throw std::runtime_error(describe(e.line, e.text, e.what()));
         } catch (const std::exception &e) {
             throw std::runtime_error(
                     std::string("Failed to finish indexing: ") + e.what());
@@ -191,11 +193,18 @@ struct IndexHandler : IndexSink {
             log.debug("Indexing line '", stringView, "'");
             indexer->index(*this, stringView);
             return indexed;
+        } catch (const LineError &e) {
+            throw std::runtime_error(describe(e.line, e.text, e.what()));
         } catch (const std::exception &e) {
             throw std::runtime_error(
-                    "Failed to index line " + std::to_string(currentLine) +
-                    ": '" + std::string(line, length) + "' - " + e.what());
+                    describe(currentLine, std::string(line, length), e.what()));
         }
+    }
+
+    static std::string describe(uint64_t line, const std::string &text,
+                                const char *what) {
+        return "Failed to index line " + std::to_string(line) + ": '" + text +
+               "' - " + what;
     }
 };
 

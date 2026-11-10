@@ -86,7 +86,12 @@ void ExternalIndexer::indexPipelined(IndexSink &sink, StringView line) {
     if (sendPipe_.writeFd() < 0)
         throw std::runtime_error("Child process input already closed");
     const auto currentLine = sink.line();
-    pending_.push_back(currentLine);
+    constexpr size_t MaxErrorTextLength = 256;
+    pending_.push_back(
+            {currentLine,
+             line.length() <= MaxErrorTextLength
+                     ? line.str()
+                     : std::string(line.begin(), MaxErrorTextLength) + "..."});
     std::string data(line.begin(), line.length());
     data += '\n';
     size_t written = 0;
@@ -100,7 +105,7 @@ void ExternalIndexer::indexPipelined(IndexSink &sink, StringView line) {
         }
         // Reading first frees the child to make progress on its own writes.
         if (fds[1].revents && !readOutput(sink))
-            throw std::runtime_error("Child process died");
+            exitedEarly();
         if (fds[0].revents & (POLLERR | POLLHUP))
             throw std::runtime_error("Unable to write to child process");
         if (fds[0].revents & POLLOUT) {
@@ -119,7 +124,7 @@ void ExternalIndexer::indexPipelined(IndexSink &sink, StringView line) {
         if (::poll(&readable, 1, 0) <= 0 || !readable.revents)
             break;
         if (!readOutput(sink))
-            throw std::runtime_error("Child process died");
+            exitedEarly();
     }
     sink.setLine(currentLine);
 }
@@ -134,9 +139,7 @@ void ExternalIndexer::finish(IndexSink &sink) {
     if (!partialOutput_.empty())
         throw std::runtime_error("Child process output ended mid-line");
     if (!pending_.empty())
-        throw std::runtime_error(
-                "Child process emitted fewer lines than it was sent (" +
-                std::to_string(pending_.size()) + " missing)");
+        exitedEarly();
     sink.setLine(currentLine);
 }
 
@@ -160,13 +163,24 @@ bool ExternalIndexer::readOutput(IndexSink &sink) {
             throw std::runtime_error(
                     "Child process emitted more than one line: '" +
                     std::string(begin, newline - begin) + "'");
-        sink.setLine(pending_.front());
+        auto reply = std::move(pending_.front());
         pending_.pop_front();
-        addKeys(sink, begin, newline);
+        ++replied_;
+        sink.setLine(reply.line);
+        try {
+            addKeys(sink, begin, newline);
+        } catch (const std::exception &e) {
+            throw LineError(reply.line, std::move(reply.text), e.what());
+        }
         start = newline + 1 - partialOutput_.data();
     }
     partialOutput_.erase(0, start);
     return true;
+}
+
+void ExternalIndexer::exitedEarly() const {
+    throw std::runtime_error("Child process exited early after " +
+                             std::to_string(replied_) + " lines");
 }
 
 ExternalIndexer::ExternalIndexer(Log &log, const std::string &command,
@@ -190,7 +204,6 @@ ExternalIndexer::ExternalIndexer(Log &log, const std::string &command,
             fcntl(sendPipe_.writeFd(), F_SETFL, flags | O_NONBLOCK) == -1)
             throw std::runtime_error("Unable to make child pipe non-blocking");
     }
-    signal(SIGCHLD, SIG_IGN);
     signal(SIGPIPE, SIG_IGN);
 }
 
@@ -198,8 +211,9 @@ ExternalIndexer::~ExternalIndexer() {
     if (childPid_ > 0) {
         log_.debug("Sending child process TERM");
         auto result = kill(childPid_, SIGTERM);
-        // The child may already have exited (and, as SIGCHLD is ignored, been
-        // reaped), e.g. once it has seen EOF.
+        // The child may already have exited, e.g. once it has seen EOF. It's
+        // not been reaped yet (only we wait on it), so its pid can't have been
+        // reused and signalling it is safe, if pointless.
         if (result == -1 && errno != ESRCH) {
             log_.error("Unable to send kill: ", errno);
             std::terminate();

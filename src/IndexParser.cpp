@@ -4,13 +4,16 @@
 #include "RegExpIndexer.h"
 #include <fstream>
 #include <iostream>
+#include <memory>
 #include <stdexcept>
 
 void IndexParser::buildIndexes(Index::Builder *builder, ConsoleLog &log) {
     std::ifstream in(fileName_, std::ifstream::in);
     std::string contents((std::istreambuf_iterator<char>(in)),
                          std::istreambuf_iterator<char>());
-    cJSON *root = cJSON_Parse(contents.c_str());
+    std::unique_ptr<cJSON, decltype(&cJSON_Delete)> parsed(
+            cJSON_Parse(contents.c_str()), &cJSON_Delete);
+    cJSON *root = parsed.get();
     if (root == nullptr) {
         throw std::runtime_error("Could not parse the json config file. "
                                  "Careful, this is a strict parser.");
@@ -69,7 +72,10 @@ void IndexParser::parseIndex(cJSON *index, Index::Builder *builder,
 
         builder->addIndexer(indexName, pipeCommand, config,
                             std::unique_ptr<LineIndexer>(new ExternalIndexer(
-                                    log, pipeCommand, delimiter)));
+                                    log, pipeCommand, delimiter,
+                                    // As for --pipe: --sparse can't wait for
+                                    // a command that buffers its output.
+                                    !config.sparse)));
     } else {
         throw std::runtime_error("unknown index " + type);
     }

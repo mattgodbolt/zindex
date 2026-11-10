@@ -29,7 +29,14 @@ class ExternalIndexer : public LineIndexer {
     bool pipelined_;
     // Pipelined mode only: the lines sent to the command that have no reply
     // yet, oldest first, and output received that's not yet a whole line.
-    std::deque<uint64_t> pending_;
+    struct PendingLine {
+        uint64_t line;
+        // Kept for error messages only, so truncated: with a command that
+        // buffers everything this is held for every line of the file.
+        std::string text;
+    };
+    std::deque<PendingLine> pending_;
+    uint64_t replied_ = 0;
     std::string partialOutput_;
 
 public:
@@ -50,5 +57,6 @@ private:
     // Reads whatever output is available (blocking if none is) and delivers
     // each whole line to the sink. Returns false at end of the output.
     bool readOutput(IndexSink &sink);
+    [[noreturn]] void exitedEarly() const;
     void runChild(const std::string &command);
 };

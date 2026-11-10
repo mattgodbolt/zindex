@@ -42,4 +42,44 @@ if [ "$("$ZQ" data.gz id5)" != "$(gzip -dc data.gz | sed -n 5p)" ]; then
     echo "FAIL: -s with a prompt command"
     exit 1
 fi
+# The same, configured by a config file.
+python3 -I -c "
+import json, sys
+print(json.dumps({'indexes': [{'type': 'pipe', 'command': sys.argv[1],
+                               'delimiter': ' '}]}))" "$BUFFERING" >pipe.json
+"$ZINDEX" --config pipe.json data.gz
+if [ "$("$ZQ" data.gz id777)" != "$(gzip -dc data.gz | sed -n 777p)" ]; then
+    echo "FAIL: --config pipe with a buffering command"
+    exit 1
+fi
+
+# An error in a key must name the line it came from, however late the command's
+# reply to that line arrives.
+expect_error() {
+    local expected=$1
+    shift
+    local out
+    if out=$("$ZINDEX" "$@" 2>&1); then
+        echo "FAIL: expected an error from $*"
+        exit 1
+    fi
+    if ! grep -qF -- "$expected" <<<"$out"; then
+        echo "FAIL: expected '$expected' in: $out"
+        exit 1
+    fi
+}
+python3 -I -c "
+for i in range(1,20001):
+    print('x' if i == 5000 else i)" | gzip >numeric.gz
+printf '1 x 3\n' | gzip >numeric3.gz
+printf 'k1\nk2\nk1\nk3\n' | gzip >dup.gz
+BUFFER_ALL="awk '{ l[NR] = \$0 } END { for (i = 1; i <= NR; i++) print l[i] }'"
+for pipe in "cat" "$BUFFER_ALL"; do
+    expect_error "Failed to index line 5000: 'x' - Non-numeric" \
+        -n --pipe "$pipe" numeric.gz
+    expect_error "Failed to index line 1: '1 x 3' - Non-numeric" \
+        -n --pipe "$pipe" numeric3.gz
+    expect_error "Failed to index line 3: 'k1' - " \
+        --unique --pipe "$pipe" dup.gz
+done
 echo "OK"
