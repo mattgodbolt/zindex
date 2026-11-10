@@ -103,9 +103,78 @@ needed, there is a JSON configuration format. Pass the `--config <yourconfigfile
     }
 
 This creates two indices, one on the first field and one on the second field, as delimited by tabs. One can
-then specify which index to query with the `-i <index>` option of `zq`.
+then specify which index to query with the `-i <index>` option of `zq`. An index with no `"name"` is called
+`default`, and is the one `zq` queries when no `-i` is given.
 
-### Issues and feature requests
+Fields are always selected by their 1-based number (`--field` or `fieldNum`); selecting a field by column name
+is not supported. Index names must only contain letters, digits and underscores (they become part of an SQL
+table name). If every index in the configuration has a `"name"`, there is no `default` index, so `zq` needs `-i`
+to say which one to query.
+
+For example, to index columns 1 and 2 (`#CHROM` and `POS`) of a tab-delimited VCF file, use this configuration:
+
+    {
+        "indexes": [
+            {"name": "chrom", "type": "field", "delimiter": "\t", "fieldNum": 1},
+            {"name": "pos", "type": "field", "delimiter": "\t", "fieldNum": 2}
+        ]
+    }
+
+and query each with `zq file.vcf.gz -i chrom chr2` or `zq file.vcf.gz -i pos 100`. Header lines are indexed like
+any other (`#CHROM` is a key in `chrom`); `zindex --skip-first <n>` leaves the first `n` lines out of the index,
+though they can still be fetched with `zq --line`. A single `zq` query uses one index; to combine two (e.g.
+chromosome and position) use `--raw`, below.
+
+## Advanced usage
+
+### Useful indexing options
+
+* `--tab-delimiter` is shorthand for a tab `--delimiter`, which is awkward to type in a shell.
+* `--index-file <path>` (on both `zindex` and `zq`) stores or reads the index at `<path>` instead of `file.gz.zindex`.
+* `-o`/`--sparseLineOffsets` only stores line offsets for lines that have an index key. Lines without one can
+  still be fetched by line number (`zq --line`), but this is slower, as `zq` has to read forward from the nearest
+  preceding decompression checkpoint (see `--checkpoint-every`). It is aimed at cases where you only ever look up lines by key. It is not the same as
+  `-s`/`--sparse`, which merges un-keyed lines into the most recent keyed line;
+  line numbers then count those merged records rather than original lines, so `--line` cannot address an individual
+  un-keyed line.
+
+```bash
+$ zindex file.gz --tab-delimiter --field 3 --index-file /somewhere/else.idx
+$ zq file.gz --index-file /somewhere/else.idx blue
+```
+
+### Custom queries with `--raw`
+
+`zq` only does exact key matches, so there is no wildcard option: for wildcards, substring searches or combining
+indices, use `zq --raw "<sql>"`. An index is a SQLite database, and `--raw` runs your own query against it instead
+of the simple key lookup. Each index is a table called `index_<name>` with, among others, a `key` column and a
+`line` column. An index made with plain `--field N` (no configuration file) is named `default`, so its table is
+`index_default`. Run `sqlite3 file.gz.zindex .schema` to see the tables. **The first column of your query must be
+the line number**: `zq` prints those lines from the file and ignores any other columns. (A query such as
+`select count(*) ...` therefore prints the line numbered by the count, not the count itself.)
+
+For a tab-separated file of word, number and colour, indexed (via a configuration file as above) with indices
+named `word` (field 1) and `colour` (field 3), this finds every line whose word starts with `al`:
+
+```bash
+$ zq file.gz --raw "select a.line from index_word a where a.key like 'al%';"
+```
+
+`LIKE` uses `%` (any characters) and `_` (one character) as wildcards, and is case-insensitive for ASCII, so this
+also matches `Alpine`. For a case-sensitive match use `GLOB`, whose wildcards are `*` and `?`:
+`where a.key glob 'al*'`. Don't mix them up: in `LIKE`, `*` is an ordinary character, so `like 'al*'` is valid but only matches a key that literally is `al*` (in practice, nothing). To find lines whose
+key contains a word anywhere, use `like '%something%'`. Any `LIKE` scans the whole index table, wherever the
+wildcard is (still far cheaper than scanning the compressed file); a case-sensitive prefix search written as
+`glob 'al*'` can instead use the key's SQLite index.
+
+To combine indices, join them on `line`: lines whose word starts with `al` and whose colour is `red`:
+
+```bash
+$ zq file.gz --raw "select a.line from index_word a, index_colour b
+    where a.line == b.line and a.key like 'al%' and b.key == 'red';"
+```
+
+## Issues and feature requests
 
 See the [issue tracker](https://github.com/mattgodbolt/zindex/issues) for TODOs and known bugs. Please raise bugs there, and feel free to submit suggestions there also.
 
