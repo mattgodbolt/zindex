@@ -361,6 +361,40 @@ TEST_CASE("indexes concatenated files", "[Index]") {
     CheckIndex(3, "Line 3 - Hex 3 - Mod 3");
 }
 
+// Regression test for #63: a line that starts in one gzip member and ends in
+// a later one (because the earlier member has no trailing newline) must be
+// returned joined, even when it spans several members.
+TEST_CASE("reads a line spanning concatenated gzip members", "[Index]") {
+    TempDir tempDir;
+    CaptureLog log;
+    auto testFile = tempDir.path + "/test.gz";
+    const vector<string> members = {"a1\na2\n", "x\ny\nz", "p",
+                                    "q",        "r\n",     "b1\n"};
+    for (size_t i = 0; i < members.size(); ++i) {
+        auto part = tempDir.path + "/part" + to_string(i);
+        {
+            ofstream out(part, ios::binary);
+            out << members[i];
+        }
+        REQUIRE(system(("gzip -c " + part + " >> " + testFile).c_str()) == 0);
+    }
+    Index::Builder builder(log, File(fopen(testFile.c_str(), "rb")), testFile,
+                           testFile + ".zindex");
+    builder.addIndexer("default", "blah", Index::IndexConfig(),
+                       unique_ptr<LineIndexer>(new RegExpIndexer("(.*)")))
+            .build();
+    Index index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
+                              testFile + ".zindex", false);
+    const vector<string> expected = {"a1", "a2", "x", "y", "zpqr", "b1"};
+    for (size_t line = 1; line <= expected.size(); ++line) {
+        CAPTURE(line);
+        CaptureSink cs;
+        REQUIRE(index.getLine(line, cs));
+        REQUIRE(cs.captured.size() == 1);
+        CHECK(cs.captured.at(0) == expected[line - 1]);
+    }
+}
+
 // Regression test: when the compressed file's size is an exact multiple of the
 // read chunk size, the end of the deflate stream is seen before EOF is, and
 // the last line (which has no terminating newline) used to crash or fail.
@@ -567,6 +601,197 @@ TEST_CASE("looks up several unkeyed lines after keyed lines on a sparse index",
             CHECK(cs.captured[1] == lines[unkeyed - 1]);
         }
     }
+}
+
+// Regression test for #63 on a sparse (-o) index: unkeyed lines have no stored
+// offset, so they are found by counting lines forward from an access point,
+// and that count must carry on across a gzip member boundary.
+TEST_CASE("reads unkeyed lines spanning gzip members on a sparse index",
+          "[Index]") {
+    TempDir tempDir;
+    CaptureLog log;
+    auto testFile = tempDir.path + "/test.gz";
+    auto build = [&](const vector<string> &members, const string &regex) {
+        for (size_t i = 0; i < members.size(); ++i) {
+            auto part = tempDir.path + "/part" + to_string(i);
+            {
+                ofstream out(part, ios::binary);
+                out << members[i];
+            }
+            REQUIRE(system(("gzip -c " + part + " >> " + testFile).c_str()) ==
+                    0);
+        }
+        Index::IndexConfig config;
+        config.sparseLineOffsets = true;
+        Index::Builder builder(log, File(fopen(testFile.c_str(), "rb")),
+                               testFile, testFile + ".zindex");
+        builder.addIndexer("default", "blah", config,
+                           unique_ptr<LineIndexer>(new RegExpIndexer(regex)))
+                .build();
+        return Index::load(log, File(fopen(testFile.c_str(), "rb")),
+                           testFile + ".zindex", false);
+    };
+
+    SECTION("one boundary") {
+        auto index = build({"k1\nk2\nu", "v\nk3\nw\n"}, "^(k.*)");
+        const vector<string> expected = {"k1", "k2", "uv", "k3", "w"};
+        for (size_t line = 1; line <= expected.size(); ++line) {
+            CAPTURE(line);
+            CaptureSink cs;
+            REQUIRE(index.getLine(line, cs));
+            REQUIRE(cs.captured.size() == 1);
+            CHECK(cs.captured.at(0) == expected[line - 1]);
+        }
+        // A request mixing keyed and unkeyed lines, in a shuffled order.
+        CaptureSink cs;
+        CHECK(index.getLines({4, 3, 1, 5, 2}, cs) == 5);
+        CHECK(cs.captured == vector<string>{"k3", "uv", "k1", "w", "k2"});
+    }
+
+    SECTION("several boundaries") {
+        auto index = build({"a1\na2\n", "x\ny\nz", "p", "q", "r\n", "b1\n"},
+                           "^(a.*)");
+        const vector<string> expected = {"a1", "a2", "x", "y", "zpqr", "b1"};
+        for (size_t line = 1; line <= expected.size(); ++line) {
+            CAPTURE(line);
+            CaptureSink cs;
+            REQUIRE(index.getLine(line, cs));
+            REQUIRE(cs.captured.size() == 1);
+            CHECK(cs.captured.at(0) == expected[line - 1]);
+        }
+    }
+}
+
+namespace {
+// Appends each of `members` to `path` as its own gzip member.
+void writeGzipMembers(const string &dir, const string &path,
+                      const vector<string> &members) {
+    for (size_t i = 0; i < members.size(); ++i) {
+        auto part = dir + "/member" + to_string(i);
+        {
+            ofstream out(part, ios::binary);
+            out << members[i];
+        }
+        REQUIRE(system(("gzip -c " + part + " >> " + path).c_str()) == 0);
+    }
+}
+
+Index buildIndex(Log &log, const string &path, const string &regex, bool sparse,
+                 uint64_t checkpointEvery = 0) {
+    Index::IndexConfig config;
+    config.sparseLineOffsets = sparse;
+    Index::Builder builder(log, File(fopen(path.c_str(), "rb")), path,
+                           path + ".zindex");
+    builder.addIndexer("default", "blah", config,
+                       unique_ptr<LineIndexer>(new RegExpIndexer(regex)));
+    if (checkpointEvery)
+        builder.indexEvery(checkpointEvery);
+    builder.build();
+    return Index::load(log, File(fopen(path.c_str(), "rb")), path + ".zindex",
+                       false);
+}
+} // namespace
+
+// A file may end in an empty gzip member (a bare `gzip </dev/null`, or bgzip's
+// EOF marker). The last real member's "next" access point is then the empty
+// member's, and that must be treated as the end of the data.
+TEST_CASE("reads the last lines before a trailing empty gzip member",
+          "[Index]") {
+    TempDir tempDir;
+    CaptureLog log;
+    auto testFile = tempDir.path + "/test.gz";
+
+    for (bool sparse : {true, false}) {
+        for (bool trailingNewline : {true, false}) {
+            CAPTURE(sparse, trailingNewline);
+            unlink(testFile.c_str());
+            writeGzipMembers(tempDir.path, testFile,
+                             {trailingNewline ? "a\nb\nc\n" : "a\nb\nc", ""});
+            auto index = buildIndex(log, testFile, "^(a)", sparse);
+            for (auto [line, text] :
+                 {pair<size_t, string>{1, "a"}, {2, "b"}, {3, "c"}}) {
+                CAPTURE(line);
+                CaptureSink cs;
+                REQUIRE(index.getLine(line, cs));
+                REQUIRE(cs.captured.size() == 1);
+                CHECK(cs.captured[0] == text);
+            }
+        }
+    }
+}
+
+TEST_CASE("reads the last lines of a many-member file with a trailing empty "
+          "member",
+          "[Index]") {
+    TempDir tempDir;
+    CaptureLog log;
+    auto testFile = tempDir.path + "/test.gz";
+    vector<string> members;
+    string current;
+    constexpr size_t MemberSize = 65280;
+    for (auto i = 1; i <= 5000; ++i) {
+        current += "line " + to_string(i) + "\n";
+        if (current.size() >= MemberSize) {
+            members.push_back(current);
+            current.clear();
+        }
+    }
+    if (!current.empty())
+        members.push_back(current);
+    members.push_back("");
+    writeGzipMembers(tempDir.path, testFile, members);
+
+    for (bool sparse : {true, false}) {
+        CAPTURE(sparse);
+        auto index = buildIndex(log, testFile, "^(line 1)$", sparse, 16384);
+        for (size_t line : {1u, 4999u, 5000u}) {
+            CAPTURE(line);
+            CaptureSink cs;
+            REQUIRE(index.getLine(line, cs));
+            REQUIRE(cs.captured.size() == 1);
+            CHECK(cs.captured[0] == "line " + to_string(line));
+        }
+    }
+}
+
+// Regression test for #73: a member that ends exactly at a line end, followed
+// by a lookup that reuses the previous lookup's decompressor, has to skip
+// across the member boundary.
+TEST_CASE("skips across a gzip member boundary with a reused decompressor",
+          "[Index]") {
+    TempDir tempDir;
+    CaptureLog log;
+    auto testFile = tempDir.path + "/test.gz";
+    writeGzipMembers(tempDir.path, testFile, {"x\n\n\n", "y\nz\n"});
+    auto index = buildIndex(log, testFile, "(.*)", false);
+    CaptureSink cs;
+    CHECK(index.getLines({1, 4}, cs) == 2);
+    CHECK(cs.captured == vector<string>{"x", "y"});
+}
+
+TEST_CASE("rejects an access point that does not advance across members",
+          "[Index]") {
+    TempDir tempDir;
+    CaptureLog log;
+    auto testFile = tempDir.path + "/test.gz";
+    writeGzipMembers(tempDir.path, testFile, {"a\nb", "c\nd\n"});
+    {
+        auto index = buildIndex(log, testFile, "(.*)", false);
+        CaptureSink cs;
+        REQUIRE(index.getLine(2, cs));
+        REQUIRE(cs.captured == vector<string>{"bc"});
+    }
+    // Corrupt the second member's access point so it points back at the start.
+    {
+        Sqlite db(log);
+        db.open(testFile + ".zindex", false);
+        db.exec("UPDATE AccessPoints SET compressedOffset = 1 WHERE "
+                "uncompressedOffset > 0");
+    }
+    Index index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
+                              testFile + ".zindex", false);
+    CaptureSink cs;
+    CHECK_THROWS(index.getLine(2, cs));
 }
 
 TEST_CASE("metadata tests", "[Index]") {
