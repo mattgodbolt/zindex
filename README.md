@@ -111,9 +111,14 @@ then specify which index to query with the `-i <index>` option of `zq`. An index
 `default`, and is the one `zq` queries when no `-i` is given.
 
 Fields are always selected by their 1-based number (`--field` or `fieldNum`); selecting a field by column name
-is not supported. Index names must only contain letters, digits and underscores (they become part of an SQL
-table name). If every index in the configuration has a `"name"`, there is no `default` index, so `zq` needs `-i`
-to say which one to query.
+is not supported. Index names (they become part of an SQL table name) may contain letters, digits, `_`, `$` and
+non-ASCII characters, must not be empty, and are case-insensitive, so `a` and `A` clash. Anything else is
+rejected with an error when building. Indexes that create `indexLineOffsets` or key SQL indexes also claim
+`<name>_line_index` and `<name>_key_index`, so another index may not use those names. Index names are
+checked before an existing index file is replaced, but other configuration errors (an unknown type, a
+missing delimiter, a bad regex) are only found afterwards and still discard the old index. Index files
+built by earlier versions with names that are no longer accepted can still be queried. If every index in
+the configuration has a `"name"`, there is no `default` index, so `zq` needs `-i` to say which one to query.
 
 For example, to index columns 1 and 2 (`#CHROM` and `POS`) of a tab-delimited VCF file, use this configuration:
 

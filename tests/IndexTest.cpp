@@ -9,6 +9,8 @@
 #include <FieldIndexer.h>
 #include <Index.h>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_exception.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <unordered_map>
@@ -16,6 +18,7 @@
 #include <zlib.h>
 
 using namespace std;
+using Catch::Matchers::ContainsSubstring;
 
 namespace {
 
@@ -358,6 +361,40 @@ TEST_CASE("indexes concatenated files", "[Index]") {
     CheckIndex(3, "Line 3 - Hex 3 - Mod 3");
 }
 
+// Regression test for #63: a line that starts in one gzip member and ends in
+// a later one (because the earlier member has no trailing newline) must be
+// returned joined, even when it spans several members.
+TEST_CASE("reads a line spanning concatenated gzip members", "[Index]") {
+    TempDir tempDir;
+    CaptureLog log;
+    auto testFile = tempDir.path + "/test.gz";
+    const vector<string> members = {"a1\na2\n", "x\ny\nz", "p",
+                                    "q",        "r\n",     "b1\n"};
+    for (size_t i = 0; i < members.size(); ++i) {
+        auto part = tempDir.path + "/part" + to_string(i);
+        {
+            ofstream out(part, ios::binary);
+            out << members[i];
+        }
+        REQUIRE(system(("gzip -c " + part + " >> " + testFile).c_str()) == 0);
+    }
+    Index::Builder builder(log, File(fopen(testFile.c_str(), "rb")), testFile,
+                           testFile + ".zindex");
+    builder.addIndexer("default", "blah", Index::IndexConfig(),
+                       unique_ptr<LineIndexer>(new RegExpIndexer("(.*)")))
+            .build();
+    Index index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
+                              testFile + ".zindex", false);
+    const vector<string> expected = {"a1", "a2", "x", "y", "zpqr", "b1"};
+    for (size_t line = 1; line <= expected.size(); ++line) {
+        CAPTURE(line);
+        CaptureSink cs;
+        REQUIRE(index.getLine(line, cs));
+        REQUIRE(cs.captured.size() == 1);
+        CHECK(cs.captured.at(0) == expected[line - 1]);
+    }
+}
+
 // Regression test: when the compressed file's size is an exact multiple of the
 // read chunk size, the end of the deflate stream is seen before EOF is, and
 // the last line (which has no terminating newline) used to crash or fail.
@@ -515,6 +552,248 @@ TEST_CASE("sparsely indexes files", "[Index]") {
     }
 }
 
+TEST_CASE("looks up several unkeyed lines after keyed lines on a sparse index",
+          "[Index]") {
+    // Regression test for #71: a keyed lookup leaves a cached decompressor
+    // positioned after that line, and a later unkeyed lookup (which counts
+    // lines from the access point) must not reuse it.
+    TempDir tempDir;
+    CaptureLog log;
+    auto testFile = tempDir.path + "/test.log";
+    vector<string> lines;
+    {
+        // Pseudo-random hex so that the gzip stream has several access points.
+        uint32_t state = 12345;
+        ofstream fileOut(testFile);
+        for (auto i = 1; i <= 2000; ++i) {
+            string hex;
+            for (auto c = 0; c < 40; ++c) {
+                state = state * 1664525u + 1013904223u;
+                hex += "0123456789abcdef"[(state >> 24) & 0xf];
+            }
+            auto line = (i % 100 == 0 ? "id:" : "x") + to_string(i) + " " + hex;
+            lines.push_back(line);
+            fileOut << line << "\n";
+        }
+        fileOut.close();
+        REQUIRE(system(("gzip -f " + testFile).c_str()) == 0);
+        testFile = testFile + ".gz";
+    }
+    Index::IndexConfig config;
+    config.sparseLineOffsets = true;
+    Index::Builder builder(log, File(fopen(testFile.c_str(), "rb")), testFile,
+                           testFile + ".zindex");
+    unique_ptr<LineIndexer> indexer(new RegExpIndexer("id:([0-9]+)"));
+    builder.addIndexer("default", "blah", config, std::move(indexer))
+            .indexEvery(4000)
+            .build();
+    Index index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
+                              testFile + ".zindex", false);
+
+    for (size_t keyed : {1000u, 1700u}) {
+        for (size_t unkeyed : {1775u, 1850u, 1999u}) {
+            INFO("lookup " << keyed << " then " << unkeyed);
+            CaptureSink cs;
+            REQUIRE(index.getLine(keyed, cs));
+            REQUIRE(index.getLine(unkeyed, cs));
+            REQUIRE(cs.captured.size() == 2);
+            CHECK(cs.captured[0] == lines[keyed - 1]);
+            CHECK(cs.captured[1] == lines[unkeyed - 1]);
+        }
+    }
+}
+
+// Regression test for #63 on a sparse (-o) index: unkeyed lines have no stored
+// offset, so they are found by counting lines forward from an access point,
+// and that count must carry on across a gzip member boundary.
+TEST_CASE("reads unkeyed lines spanning gzip members on a sparse index",
+          "[Index]") {
+    TempDir tempDir;
+    CaptureLog log;
+    auto testFile = tempDir.path + "/test.gz";
+    auto build = [&](const vector<string> &members, const string &regex) {
+        for (size_t i = 0; i < members.size(); ++i) {
+            auto part = tempDir.path + "/part" + to_string(i);
+            {
+                ofstream out(part, ios::binary);
+                out << members[i];
+            }
+            REQUIRE(system(("gzip -c " + part + " >> " + testFile).c_str()) ==
+                    0);
+        }
+        Index::IndexConfig config;
+        config.sparseLineOffsets = true;
+        Index::Builder builder(log, File(fopen(testFile.c_str(), "rb")),
+                               testFile, testFile + ".zindex");
+        builder.addIndexer("default", "blah", config,
+                           unique_ptr<LineIndexer>(new RegExpIndexer(regex)))
+                .build();
+        return Index::load(log, File(fopen(testFile.c_str(), "rb")),
+                           testFile + ".zindex", false);
+    };
+
+    SECTION("one boundary") {
+        auto index = build({"k1\nk2\nu", "v\nk3\nw\n"}, "^(k.*)");
+        const vector<string> expected = {"k1", "k2", "uv", "k3", "w"};
+        for (size_t line = 1; line <= expected.size(); ++line) {
+            CAPTURE(line);
+            CaptureSink cs;
+            REQUIRE(index.getLine(line, cs));
+            REQUIRE(cs.captured.size() == 1);
+            CHECK(cs.captured.at(0) == expected[line - 1]);
+        }
+        // A request mixing keyed and unkeyed lines, in a shuffled order.
+        CaptureSink cs;
+        CHECK(index.getLines({4, 3, 1, 5, 2}, cs) == 5);
+        CHECK(cs.captured == vector<string>{"k3", "uv", "k1", "w", "k2"});
+    }
+
+    SECTION("several boundaries") {
+        auto index = build({"a1\na2\n", "x\ny\nz", "p", "q", "r\n", "b1\n"},
+                           "^(a.*)");
+        const vector<string> expected = {"a1", "a2", "x", "y", "zpqr", "b1"};
+        for (size_t line = 1; line <= expected.size(); ++line) {
+            CAPTURE(line);
+            CaptureSink cs;
+            REQUIRE(index.getLine(line, cs));
+            REQUIRE(cs.captured.size() == 1);
+            CHECK(cs.captured.at(0) == expected[line - 1]);
+        }
+    }
+}
+
+namespace {
+// Appends each of `members` to `path` as its own gzip member.
+void writeGzipMembers(const string &dir, const string &path,
+                      const vector<string> &members) {
+    for (size_t i = 0; i < members.size(); ++i) {
+        auto part = dir + "/member" + to_string(i);
+        {
+            ofstream out(part, ios::binary);
+            out << members[i];
+        }
+        REQUIRE(system(("gzip -c " + part + " >> " + path).c_str()) == 0);
+    }
+}
+
+Index buildIndex(Log &log, const string &path, const string &regex, bool sparse,
+                 uint64_t checkpointEvery = 0) {
+    Index::IndexConfig config;
+    config.sparseLineOffsets = sparse;
+    Index::Builder builder(log, File(fopen(path.c_str(), "rb")), path,
+                           path + ".zindex");
+    builder.addIndexer("default", "blah", config,
+                       unique_ptr<LineIndexer>(new RegExpIndexer(regex)));
+    if (checkpointEvery)
+        builder.indexEvery(checkpointEvery);
+    builder.build();
+    return Index::load(log, File(fopen(path.c_str(), "rb")), path + ".zindex",
+                       false);
+}
+} // namespace
+
+// A file may end in an empty gzip member (a bare `gzip </dev/null`, or bgzip's
+// EOF marker). The last real member's "next" access point is then the empty
+// member's, and that must be treated as the end of the data.
+TEST_CASE("reads the last lines before a trailing empty gzip member",
+          "[Index]") {
+    TempDir tempDir;
+    CaptureLog log;
+    auto testFile = tempDir.path + "/test.gz";
+
+    for (bool sparse : {true, false}) {
+        for (bool trailingNewline : {true, false}) {
+            CAPTURE(sparse, trailingNewline);
+            unlink(testFile.c_str());
+            writeGzipMembers(tempDir.path, testFile,
+                             {trailingNewline ? "a\nb\nc\n" : "a\nb\nc", ""});
+            auto index = buildIndex(log, testFile, "^(a)", sparse);
+            for (auto [line, text] :
+                 {pair<size_t, string>{1, "a"}, {2, "b"}, {3, "c"}}) {
+                CAPTURE(line);
+                CaptureSink cs;
+                REQUIRE(index.getLine(line, cs));
+                REQUIRE(cs.captured.size() == 1);
+                CHECK(cs.captured[0] == text);
+            }
+        }
+    }
+}
+
+TEST_CASE("reads the last lines of a many-member file with a trailing empty "
+          "member",
+          "[Index]") {
+    TempDir tempDir;
+    CaptureLog log;
+    auto testFile = tempDir.path + "/test.gz";
+    vector<string> members;
+    string current;
+    constexpr size_t MemberSize = 65280;
+    for (auto i = 1; i <= 5000; ++i) {
+        current += "line " + to_string(i) + "\n";
+        if (current.size() >= MemberSize) {
+            members.push_back(current);
+            current.clear();
+        }
+    }
+    if (!current.empty())
+        members.push_back(current);
+    members.push_back("");
+    writeGzipMembers(tempDir.path, testFile, members);
+
+    for (bool sparse : {true, false}) {
+        CAPTURE(sparse);
+        auto index = buildIndex(log, testFile, "^(line 1)$", sparse, 16384);
+        for (size_t line : {1u, 4999u, 5000u}) {
+            CAPTURE(line);
+            CaptureSink cs;
+            REQUIRE(index.getLine(line, cs));
+            REQUIRE(cs.captured.size() == 1);
+            CHECK(cs.captured[0] == "line " + to_string(line));
+        }
+    }
+}
+
+// Regression test for #73: a member that ends exactly at a line end, followed
+// by a lookup that reuses the previous lookup's decompressor, has to skip
+// across the member boundary.
+TEST_CASE("skips across a gzip member boundary with a reused decompressor",
+          "[Index]") {
+    TempDir tempDir;
+    CaptureLog log;
+    auto testFile = tempDir.path + "/test.gz";
+    writeGzipMembers(tempDir.path, testFile, {"x\n\n\n", "y\nz\n"});
+    auto index = buildIndex(log, testFile, "(.*)", false);
+    CaptureSink cs;
+    CHECK(index.getLines({1, 4}, cs) == 2);
+    CHECK(cs.captured == vector<string>{"x", "y"});
+}
+
+TEST_CASE("rejects an access point that does not advance across members",
+          "[Index]") {
+    TempDir tempDir;
+    CaptureLog log;
+    auto testFile = tempDir.path + "/test.gz";
+    writeGzipMembers(tempDir.path, testFile, {"a\nb", "c\nd\n"});
+    {
+        auto index = buildIndex(log, testFile, "(.*)", false);
+        CaptureSink cs;
+        REQUIRE(index.getLine(2, cs));
+        REQUIRE(cs.captured == vector<string>{"bc"});
+    }
+    // Corrupt the second member's access point so it points back at the start.
+    {
+        Sqlite db(log);
+        db.open(testFile + ".zindex", false);
+        db.exec("UPDATE AccessPoints SET compressedOffset = 1 WHERE "
+                "uncompressedOffset > 0");
+    }
+    Index index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
+                              testFile + ".zindex", false);
+    CaptureSink cs;
+    CHECK_THROWS(index.getLine(2, cs));
+}
+
 TEST_CASE("metadata tests", "[Index]") {
     TempDir tempDir;
     CaptureLog log;
@@ -557,14 +836,13 @@ TEST_CASE("metadata tests", "[Index]") {
                     break;
             }
             SECTION("fails without force") {
-                try {
-                    Index::load(log, File(fopen(testFile.c_str(), "rb")),
-                                testFile + ".zindex", false);
-                    FAIL("Should have thrown");
-                } catch (const exception &e) {
-                    CHECK(string(e.what()) == "Compressed file has been "
-                                              "modified since index was built");
-                }
+                REQUIRE_THROWS_MATCHES(
+                        Index::load(log, File(fopen(testFile.c_str(), "rb")),
+                                    testFile + ".zindex", false),
+                        exception,
+                        Catch::Matchers::MessageMatches(Catch::Matchers::Equals(
+                                "Compressed file has been "
+                                "modified since index was built")));
             }
             SECTION("loads with force") {
                 Index::load(log, File(fopen(testFile.c_str(), "rb")),
@@ -577,14 +855,13 @@ TEST_CASE("metadata tests", "[Index]") {
                 fputc(0, corrupter.get());
             }
             SECTION("fails without force") {
-                try {
-                    Index::load(log, File(fopen(testFile.c_str(), "rb")),
-                                testFile + ".zindex", false);
-                    FAIL("Should have thrown");
-                } catch (const exception &e) {
-                    CHECK(string(e.what()) ==
-                          "Compressed size changed since index was built");
-                }
+                REQUIRE_THROWS_MATCHES(
+                        Index::load(log, File(fopen(testFile.c_str(), "rb")),
+                                    testFile + ".zindex", false),
+                        exception,
+                        Catch::Matchers::MessageMatches(Catch::Matchers::Equals(
+                                "Compressed size changed since index was "
+                                "built")));
             }
             SECTION("loads with force") {
                 Index::load(log, File(fopen(testFile.c_str(), "rb")),
@@ -655,5 +932,188 @@ TEST_CASE("indexes line offsets when there are no indexers", "[Index]") {
         CaptureSink cs;
         CHECK_THROWS(index.queryIndex("default", "1", cs));
         CHECK(cs.captured.empty());
+    }
+}
+
+TEST_CASE("index names are validated and missing indexes explained",
+          "[Index]") {
+    TempDir tempDir;
+    CaptureLog log;
+    auto testFile = tempDir.path + "/names.log";
+    {
+        ofstream fileOut(testFile);
+        fileOut << "a 1\nb 2\n";
+    }
+    REQUIRE(system(("gzip -f " + testFile).c_str()) == 0);
+    testFile += ".gz";
+
+    auto makeBuilder = [&] {
+        return Index::Builder(log, File(fopen(testFile.c_str(), "rb")),
+                              testFile, testFile + ".zindex");
+    };
+    auto addNamed = [&](Index::Builder &builder, const std::string &name) {
+        builder.addIndexer(name, "blah", Index::IndexConfig(),
+                           std::make_unique<FieldIndexer>(" ", 1));
+    };
+
+    SECTION("names that are not plain identifiers are rejected clearly") {
+        for (const char *bad : {"my-idx", "two words", "", "a;b", "x\"y"}) {
+            auto builder = makeBuilder();
+            INFO("name '" << bad << "'");
+            CHECK_THROWS_WITH(addNamed(builder, bad),
+                              ContainsSubstring("Invalid index name") &&
+                                      !ContainsSubstring("CREATE TABLE") &&
+                                      !ContainsSubstring("syntax"));
+        }
+    }
+
+    SECTION("letters, digits and underscores are accepted") {
+        auto builder = makeBuilder();
+        CHECK_NOTHROW(addNamed(builder, "Ok_name_9"));
+    }
+
+    SECTION("querying a missing index lists the ones that exist") {
+        auto builder = makeBuilder();
+        addNamed(builder, "first");
+        addNamed(builder, "second");
+        builder.build();
+        auto index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
+                                 testFile + ".zindex", false);
+        CaptureSink cs;
+        CHECK_THROWS_WITH(
+                index.queryIndex("default", "a", cs),
+                ContainsSubstring("index file has no index named 'default'") &&
+                        ContainsSubstring("first, second") &&
+                        ContainsSubstring("-i") &&
+                        !ContainsSubstring("no such table"));
+        // Names never reach SQL unchecked.
+        CHECK_THROWS_WITH(
+                index.queryIndex("first; DROP TABLE x", "a", cs),
+                ContainsSubstring("no index named 'first; DROP TABLE x'"));
+        CHECK(index.queryIndex("first", "a", cs) == 1);
+    }
+
+    SECTION("an index with no indexers says there are none") {
+        auto builder = makeBuilder();
+        builder.build();
+        auto index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
+                                 testFile + ".zindex", false);
+        CaptureSink cs;
+        CHECK_THROWS_WITH(index.queryIndex("default", "a", cs),
+                          ContainsSubstring("no index named 'default'") &&
+                                  ContainsSubstring("no indexes"));
+    }
+
+    SECTION("index names are matched case-insensitively like SQLite tables") {
+        auto builder = makeBuilder();
+        addNamed(builder, "First");
+        builder.build();
+        auto index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
+                                 testFile + ".zindex", false);
+        CaptureSink cs;
+        CHECK(index.queryIndex("first", "a", cs) == 1);
+        CHECK(index.queryIndexMulti("FIRST", {"a", "b"}, cs) == 2);
+    }
+
+    SECTION("names SQLite accepts unquoted still work") {
+        auto builder = makeBuilder();
+        addNamed(builder, "caf\xc3\xa9");
+        addNamed(builder, "a$b");
+        builder.build();
+        auto index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
+                                 testFile + ".zindex", false);
+        CaptureSink cs;
+        CHECK(index.queryIndex("caf\xc3\xa9", "a", cs) == 1);
+        CHECK(index.queryIndex("a$b", "b", cs) == 1);
+        CHECK(index.indexSize("a$b") == 2);
+    }
+
+    SECTION("names differing only by case are a clear error") {
+        auto builder = makeBuilder();
+        addNamed(builder, "a");
+        CHECK_THROWS_WITH(addNamed(builder, "A"),
+                          ContainsSubstring("differ only by case") &&
+                                  !ContainsSubstring("CREATE TABLE"));
+    }
+
+    SECTION("indexSize does not splice unchecked names into SQL") {
+        auto builder = makeBuilder();
+        addNamed(builder, "first");
+        builder.build();
+        auto index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
+                                 testFile + ".zindex", false);
+        CHECK(index.indexSize("first") == 2);
+        CHECK_THROWS_WITH(index.indexSize("first; DROP TABLE x"),
+                          ContainsSubstring("no index named"));
+    }
+
+    SECTION("an old index with a NULL index name still works") {
+        {
+            auto builder = makeBuilder();
+            addNamed(builder, "first");
+            addNamed(builder, "two");
+            builder.build();
+        }
+        {
+            Sqlite db(log);
+            db.open(testFile + ".zindex", false);
+            // What master stored for `"name": ""`: a NULL name and a table
+            // called plain `index_`.
+            db.exec("UPDATE Indexes SET name = NULL WHERE name = 'first'");
+            db.exec("ALTER TABLE index_first RENAME TO index_");
+        }
+        auto index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
+                                 testFile + ".zindex", false);
+        CaptureSink cs;
+        CHECK(index.queryIndex("two", "a", cs) == 1);
+        CHECK(index.queryIndex("", "a", cs) == 1);
+        CHECK(index.indexSize("") == 2);
+        CHECK_THROWS_WITH(index.queryIndex("nope", "a", cs),
+                          ContainsSubstring("'', two"));
+    }
+
+    SECTION("a hand-crafted index name never reaches SQL") {
+        {
+            auto builder = makeBuilder();
+            addNamed(builder, "two");
+            builder.build();
+        }
+        {
+            Sqlite db(log);
+            db.open(testFile + ".zindex", false);
+            db.exec("UPDATE Indexes SET name = 'two where 0; select 1 --'");
+        }
+        auto index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
+                                 testFile + ".zindex", false);
+        CaptureSink cs;
+        CHECK_THROWS_WITH(index.queryIndex("two where 0; select 1 --", "a", cs),
+                          ContainsSubstring("unusable"));
+    }
+
+    SECTION("long and mixed-case names still work") {
+        auto builder = makeBuilder();
+        addNamed(builder, std::string(5000, 'x'));
+        addNamed(builder, "DEFAULT");
+        builder.build();
+        auto index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
+                                 testFile + ".zindex", false);
+        CaptureSink cs;
+        CHECK(index.queryIndex(std::string(5000, 'x'), "a", cs) == 1);
+        CHECK(index.queryIndex("default", "a", cs) == 1);
+    }
+
+    SECTION("SQL objects derived from one name cannot clash with another") {
+        auto builder = makeBuilder();
+        builder.addIndexer("a", "blah",
+                           Index::IndexConfig().withIndexLineOffsets(true),
+                           std::make_unique<FieldIndexer>(" ", 1));
+        for (const char *clash : {"a_line_index", "A_LINE_INDEX"}) {
+            INFO(clash);
+            CHECK_THROWS_WITH(addNamed(builder, clash),
+                              ContainsSubstring("clashes") &&
+                                      !ContainsSubstring("CREATE TABLE"));
+        }
+        CHECK_THROWS_WITH(addNamed(builder, "a_key_index"),
+                          ContainsSubstring("clashes"));
     }
 }

@@ -1,5 +1,4 @@
 #include "RegExpIndexer.h"
-#include <fstream>
 
 #include "CaptureSink.h"
 #include <catch2/catch_test_macros.hpp>
@@ -17,8 +16,7 @@ TEST_CASE("indexes", "[RegExpIndexer]") {
         RegExpIndexer firstWord("^\\w+");
         CaptureSink sink;
         firstWord.index(sink, "these are words");
-        REQUIRE(sink.captured.size() == 1);
-        CHECK(sink.captured[0] == "these");
+        CHECK(sink.captured == vs({"these"}));
     }
     SECTION("stupid index") {
         RegExpIndexer singleChar(".");

@@ -12,6 +12,7 @@
 #include "PrettyBytes.h"
 #include "StringView.h"
 #include <algorithm>
+#include <cctype>
 #include <cstdint>
 #include <cstring>
 #include <functional>
@@ -23,6 +24,8 @@
 #include <unistd.h>
 #include <unordered_map>
 #include <vector>
+
+static bool hasOnlyIdentifierChars(const std::string &name);
 
 namespace {
 
@@ -271,6 +274,8 @@ struct NumericHandler : IndexHandler {
 
 struct CachedContext {
     size_t uncompressedOffset_;
+    // Where the access point this raw stream was started from begins.
+    size_t startCompressedOffset_ = 0;
     size_t blockSize_;
     uint8_t input_[ChunkSize];
     ZStream zs_;
@@ -308,9 +313,14 @@ FROM LineOffsets lo, AccessPoints ap
 WHERE lo.offset >= ap.uncompressedOffset AND offset <= ap.uncompressedEndOffset
 AND lo.line = :line
 LIMIT 1)")),
+          // An access point can fall part way through a line (notably at the
+          // start of a gzip member whose predecessor lacks a trailing
+          // newline), and lineNum then counts that partial line as already
+          // complete. So only start counting from one at least two lines
+          // before the target, which leaves the target wholly after it.
           sparseLineOffsetsQuery_(db_.prepare(R"(
 SELECT lineNum, compressedOffset, uncompressedOffset, bitOffset, window
-FROM AccessPoints where lineNum <= :line order by lineNum desc
+FROM AccessPoints where lineNum + 2 <= :line or lineNum = 0 order by lineNum desc, uncompressedOffset asc
 LIMIT 1)")) {
         try {
             auto queryMeta = db_.prepare("SELECT key, value FROM Metadata");
@@ -404,6 +414,43 @@ LIMIT 1)")) {
         return true;
     }
 
+    // Looks the name up in the Indexes table, matching case-insensitively as
+    // SQLite does for table names, and returns the stored spelling. This gives
+    // a useful message for a missing index and means an arbitrary -i value
+    // never reaches SQL.
+    std::string resolveIndex(const std::string &index) const {
+        auto names = db_.prepare("SELECT name FROM Indexes ORDER BY name");
+        std::string available;
+        std::string found;
+        bool matched = false;
+        while (!names.step()) {
+            // Master stored a NULL for `"name": ""`, whose table is `index_`.
+            auto name = names.columnString(0);
+            if (!matched && Index::sameIndexName(name, index)) {
+                matched = true;
+                found = name;
+            }
+            available += (available.empty() ? "" : ", ") +
+                         (name.empty() ? std::string("''") : name);
+        }
+        if (!matched) {
+            throw std::runtime_error(
+                    "index file has no index named '" + index + "'; " +
+                    (available.empty() ? std::string("it contains no indexes")
+                                       : "it contains: " + available +
+                                                 " (use -i <name>)"));
+        }
+        // The stored name is spliced into SQL, and the file could have been
+        // edited; the empty name is legal here as master could build it.
+        if (!hasOnlyIdentifierChars(found)) {
+            throw std::runtime_error("index file has an index with an "
+                                     "unusable name '" +
+                                     found + "'; refusing to query it");
+        }
+        return found;
+    }
+
+    // `index` must already have been through resolveIndex.
     size_t queryIndex(const std::string &index, const std::string &query,
                       LineFunction lineFunc) {
         auto stmt = db_.prepare(R"(
@@ -434,7 +481,7 @@ WHERE key = :query
     }
 
     size_t indexSize(const std::string &index) const {
-        return tableSize("index_" + index);
+        return tableSize("index_" + resolveIndex(index));
     }
 
     size_t tableSize(const std::string &name) const {
@@ -469,24 +516,54 @@ WHERE key = :query
             log_.debug("Creating new context at offset ", compressedOffset, ":",
                        bitOffset);
             context.reset(new CachedContext(uncompressedOffset, blockSize_));
-            uint8_t window[WindowSize];
-            uncompress(windowData, window, WindowSize);
-
-            seek(compressed_,
-                 bitOffset ? compressedOffset - 1 : compressedOffset);
-            context->zs_.stream.avail_in = 0;
-            if (bitOffset) {
-                auto c = fgetc(compressed_.get());
-                if (c == -1)
-                    throw ZlibError(ferror(compressed_.get()) ? Z_ERRNO
-                                                              : Z_DATA_ERROR);
-                X(inflatePrime(&context->zs_.stream, bitOffset,
-                               c >> (8 - bitOffset)));
-            }
-            X(inflateSetDictionary(&context->zs_.stream, &window[0],
-                                   WindowSize));
+            startStream(*context, compressedOffset, bitOffset, windowData);
         }
         return context;
+    }
+
+    // Points the (freshly created or reset) raw inflater at an access point.
+    void startStream(CachedContext &context, size_t compressedOffset,
+                     int bitOffset, const std::vector<uint8_t> &windowData) {
+        uint8_t window[WindowSize];
+        uncompress(windowData, window, WindowSize);
+
+        context.startCompressedOffset_ = compressedOffset;
+        seek(compressed_, bitOffset ? compressedOffset - 1 : compressedOffset);
+        context.zs_.stream.avail_in = 0;
+        if (bitOffset) {
+            auto c = fgetc(compressed_.get());
+            if (c == -1)
+                throw ZlibError(ferror(compressed_.get()) ? Z_ERRNO
+                                                          : Z_DATA_ERROR);
+            X(inflatePrime(&context.zs_.stream, bitOffset,
+                           c >> (8 - bitOffset)));
+        }
+        X(inflateSetDictionary(&context.zs_.stream, &window[0], WindowSize));
+    }
+
+    // A gzip member ended part way through a line. Every member start has an
+    // access point (see the build loop), so carry on decoding from the one at
+    // the current uncompressed offset. Returns false if there isn't one.
+    bool continueInNextMember(CachedContext &context) {
+        auto next = db_.prepare(R"(
+SELECT compressedOffset, bitOffset, window
+FROM AccessPoints WHERE uncompressedOffset = :offset)");
+        next.bindInt64(":offset", context.uncompressedOffset_);
+        if (next.step())
+            return false;
+        auto nextCompressedOffset = static_cast<size_t>(next.columnInt64(0));
+        // A member's access point lies after the previous one's. The same one
+        // means we are already in the last member and what follows is only an
+        // empty member (e.g. bgzip's EOF marker), so there is no more data.
+        // Anything earlier is a corrupt index, and would loop.
+        if (nextCompressedOffset == context.startCompressedOffset_)
+            return false;
+        if (nextCompressedOffset < context.startCompressedOffset_)
+            throw ZlibError(Z_DATA_ERROR);
+        context.zs_.reset();
+        startStream(context, nextCompressedOffset,
+                    static_cast<int>(next.columnInt64(1)), next.columnBlob(2));
+        return true;
     }
 
     void print(size_t lineNum, size_t line, size_t offset,
@@ -497,6 +574,11 @@ WHERE key = :query
         // decode a line do we save it in the cachedContext_ for a subsequent
         // call.
         constexpr auto MaxLength = (64u * 1024 * 1024) - 1;
+        // Without line offset data we count lines forward from the access
+        // point, so must start decoding exactly there. The cached context is
+        // positioned after whichever line was last decoded, so can't be used.
+        if (length == 0)
+            cachedContext_.reset();
         std::unique_ptr<CachedContext> context = resetContext(
                 offset != 0 ? offset : uncompressedOffset - 1, compressedOffset,
                 uncompressedOffset, bitOffset, windowData);
@@ -511,11 +593,6 @@ WHERE key = :query
             bool first = true;
             auto ret = 0;
             uint8_t window[WindowSize];
-            // `zs` refers into `context`, which is freed at the end of a
-            // concatenated gzip member, so remember how much of the window
-            // was left over at that point.
-            uInt availOutAtStreamEnd = 0;
-
             do {
                 if (zs.stream.avail_in == 0) {
                     zs.stream.avail_in =
@@ -561,16 +638,15 @@ WHERE key = :query
                     log_.debug("Resetting stream at EOS at offset ",
                                context->uncompressedOffset_);
                     // As we opened the stream in RAW mode we can't continue
-                    // decoding from here: the decoder doesn't know if there's
-                    // a trailing CRC or similar here. So we have to throw away
-                    // state at this point. We know the indexer always stops us
-                    // from crossing a divide here. We check we weren't skipping
-                    // still (which we ought not to be...) and then chuck the
-                    // whole context out.  Ideally we'd skip the (optional?)
-                    // trailer and reset the zlib state back in normal, non-raw
-                    // mode and play on.
-                    availOutAtStreamEnd = zs.stream.avail_out;
-                    context.reset();
+                    // decoding from here: the decoder doesn't know about the
+                    // gzip trailer and next header. Every member start has an
+                    // access point though, so restart the decoder from that
+                    // one, keeping the output window, so a line spanning the
+                    // boundary is joined.
+                    // If there is none, this was the last member (we just
+                    // hadn't seen EOF yet) and we are done.
+                    if (continueInNextMember(*context))
+                        ret = Z_OK;
                 }
                 if (oneLiner.lastLineNum > line) {
                     // passed the line
@@ -578,10 +654,7 @@ WHERE key = :query
                 }
 
             } while (ret != Z_STREAM_END);
-            finder.add(window,
-                       WindowSize - (context ? zs.stream.avail_out
-                                             : availOutAtStreamEnd),
-                       true);
+            finder.add(window, WindowSize - zs.stream.avail_out, true);
 
             return;
         }
@@ -638,26 +711,24 @@ WHERE key = :query
                     log_.debug("Resetting stream at EOS at offset ",
                                context->uncompressedOffset_);
                     // As we opened the stream in RAW mode we can't continue
-                    // decoding from here: the decoder doesn't know if there's
-                    // a trailing CRC or similar here. So we have to throw away
-                    // state at this point. We know the indexer always stops us
-                    // from crossing a divide here. We check we weren't skipping
-                    // still (which we ought not to be...) and then chuck the
-                    // whole context out.  Ideally we'd skip the (optional?)
-                    // trailer and reset the zlib state back in normal, non-raw
-                    // mode and play on.
-                    if (skipping)
-                        throw std::runtime_error(
-                                "Tried to cross a gzip stream boundary");
+                    // decoding from here: the decoder doesn't know about the
+                    // gzip trailer and next header. Every member start has an
+                    // access point, so restart the decoder from it if we are
+                    // still skipping towards the line (a reused context can
+                    // sit in an earlier member than the line) or the line
+                    // continues into the next member.
+                    //
                     // `zs` refers into `context`, so decide whether we have the
                     // whole line before we destroy it. A final line with no
                     // terminating newline is indexed as if it had one, so one
                     // byte of the buffer legitimately goes unused.
-                    const bool haveWholeLine = zs.stream.avail_out <= 1;
-                    context.reset();
-                    if (!haveWholeLine)
+                    if (!skipping && zs.stream.avail_out <= 1) {
+                        context.reset();
+                        break;
+                    }
+                    if (!continueInNextMember(*context))
                         throw ZlibError(Z_DATA_ERROR);
-                    break;
+                    continue;
                 }
             } while (zs.stream.avail_out);
         } while (skipping);
@@ -688,6 +759,7 @@ struct Index::Builder::Impl : LineSink {
     std::unordered_map<std::string, std::unique_ptr<IndexHandler>> indexers;
     bool saveAllLines_;
     bool sparseLineOffsets_;
+    std::vector<std::pair<std::string, Index::IndexConfig>> added_;
     // Only populated when sparseLineOffsets_ is set: indexedLines_[n] is true
     // if line n produced at least one index key. n is the 1-based number
     // passed to onLine() (LineFinder passes lineOffsets_.size() + 1), which in
@@ -930,6 +1002,8 @@ INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
         // once
         saveAllLines_ |= !config.sparse;
         sparseLineOffsets_ |= config.sparseLineOffsets;
+        added_.emplace_back(name, config);
+        Index::checkIndexNames(added_);
         auto table = "index_" + name;
         std::string type = config.numeric ? "INTEGER" : "TEXT";
         if (config.unique)
@@ -1049,15 +1123,16 @@ size_t Index::getLines(const std::vector<uint64_t> &lines, LineSink &sink) {
 
 size_t Index::queryIndex(const std::string &index, const std::string &query,
                          LineFunction lineFunction) {
-    return impl_->queryIndex(index, query, lineFunction);
+    return impl_->queryIndex(impl_->resolveIndex(index), query, lineFunction);
 }
 
 size_t Index::queryIndexMulti(const std::string &index,
                               const std::vector<std::string> &queries,
                               LineFunction lineFunction) {
     size_t result = 0;
+    auto resolved = impl_->resolveIndex(index);
     for (auto query : queries)
-        result += impl_->queryIndex(index, query, lineFunction);
+        result += impl_->queryIndex(resolved, query, lineFunction);
     return result;
 }
 
@@ -1083,4 +1158,70 @@ const Index::Metadata &Index::getMetadata() const {
 Index::LineFunction Index::sinkFetch(LineSink &sink) {
     return std::function<void(size_t)>(
             [this, &sink](size_t line) { this->getLine(line, sink); });
+}
+
+bool Index::sameIndexName(const std::string &a, const std::string &b) {
+    // SQLite folds only ASCII case in identifiers.
+    return a.size() == b.size() &&
+           std::equal(a.begin(), a.end(), b.begin(),
+                      [](unsigned char x, unsigned char y) {
+                          auto fold = [](unsigned char c) {
+                              return (c >= 'A' && c <= 'Z') ? c + 32 : c;
+                          };
+                          return fold(x) == fold(y);
+                      });
+}
+
+// Names SQLite accepts unquoted in an identifier: ASCII letters, digits, '_',
+// '$' and any non-ASCII byte. The name is spliced into SQL unquoted, so
+// anything else must never get that far (this also rules out injection).
+static bool hasOnlyIdentifierChars(const std::string &name) {
+    return std::all_of(name.begin(), name.end(), [](unsigned char c) {
+        return std::isalnum(c) || c == '_' || c == '$' || c >= 0x80;
+    });
+}
+
+void Index::checkIndexNames(
+        const std::vector<std::pair<std::string, IndexConfig>> &indexes) {
+    for (const auto &index : indexes) {
+        const auto &name = index.first;
+        if (name.empty() || !hasOnlyIdentifierChars(name)) {
+            throw std::runtime_error(
+                    "Invalid index name '" + name +
+                    "': names must be non-empty and contain only letters, "
+                    "digits, '_', '$' and non-ASCII characters");
+        }
+    }
+    // SQLite object names are case-insensitive, and tables and SQL indexes
+    // share one namespace.
+    struct Object {
+        std::string sqlName;
+        size_t owner;
+    };
+    std::vector<Object> objects;
+    for (size_t i = 0; i < indexes.size(); ++i) {
+        auto table = "index_" + indexes[i].first;
+        objects.push_back({table, i});
+        if (indexes[i].second.indexLineOffsets)
+            objects.push_back({table + "_line_index", i});
+        if (!indexes[i].second.unique)
+            objects.push_back({table + "_key_index", i});
+    }
+    for (size_t i = 0; i < objects.size(); ++i)
+        for (size_t j = i + 1; j < objects.size(); ++j) {
+            if (objects[i].owner == objects[j].owner ||
+                !sameIndexName(objects[i].sqlName, objects[j].sqlName))
+                continue;
+            const auto &a = indexes[objects[i].owner].first;
+            const auto &b = indexes[objects[j].owner].first;
+            if (sameIndexName(a, b))
+                throw std::runtime_error(
+                        "Index names '" + a + "' and '" + b +
+                        "' differ only by case (or are repeated); names must "
+                        "be distinct");
+            throw std::runtime_error(
+                    "Index '" + a + "' creates '" + objects[i].sqlName +
+                    "', which clashes with '" + objects[j].sqlName +
+                    "' from index '" + b + "'; rename one of them");
+        }
 }

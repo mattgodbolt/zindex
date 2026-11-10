@@ -191,3 +191,15 @@ add_test(NAME pipe-buffered-command
          COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/pipe_buffered_e2e.sh
                  $<TARGET_FILE:zindex> $<TARGET_FILE:zq>)
 set_tests_properties(pipe-buffered-command PROPERTIES TIMEOUT 120)
+
+add_test(NAME index-name-errors
+         COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/index_names_e2e.sh
+                 $<TARGET_FILE:zindex> $<TARGET_FILE:zq>)
+
+add_test(NAME uri-index-file
+         COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/uri_index_e2e.sh
+                 $<TARGET_FILE:zindex> $<TARGET_FILE:zq>)
+
+add_test(NAME concatenated-gzip-lines
+         COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/concat_gzip_e2e.sh
+                 $<TARGET_FILE:zindex> $<TARGET_FILE:zq>)
