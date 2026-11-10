@@ -18,9 +18,9 @@ void Sqlite::open(const std::string &filename, bool readOnly) {
     log_->info("Opening database ", filename, " in ",
                readOnly ? "read-only" : "read-write", " mode");
     R(sqlite3_open_v2(filename.c_str(), &sql_,
-                      readOnly ? SQLITE_OPEN_READONLY
-                               : SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE |
-                                         SQLITE_OPEN_URI,
+                      (readOnly ? SQLITE_OPEN_READONLY
+                                : SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE) |
+                              SQLITE_OPEN_URI,
                       nullptr));
     R(sqlite3_extended_result_codes(sql_, true));
 }

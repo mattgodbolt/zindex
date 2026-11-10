@@ -9,6 +9,7 @@
 #include <FieldIndexer.h>
 #include <Index.h>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_exception.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -517,6 +518,57 @@ TEST_CASE("sparsely indexes files", "[Index]") {
     }
 }
 
+TEST_CASE("looks up several unkeyed lines after keyed lines on a sparse index",
+          "[Index]") {
+    // Regression test for #71: a keyed lookup leaves a cached decompressor
+    // positioned after that line, and a later unkeyed lookup (which counts
+    // lines from the access point) must not reuse it.
+    TempDir tempDir;
+    CaptureLog log;
+    auto testFile = tempDir.path + "/test.log";
+    vector<string> lines;
+    {
+        // Pseudo-random hex so that the gzip stream has several access points.
+        uint32_t state = 12345;
+        ofstream fileOut(testFile);
+        for (auto i = 1; i <= 2000; ++i) {
+            string hex;
+            for (auto c = 0; c < 40; ++c) {
+                state = state * 1664525u + 1013904223u;
+                hex += "0123456789abcdef"[(state >> 24) & 0xf];
+            }
+            auto line = (i % 100 == 0 ? "id:" : "x") + to_string(i) + " " + hex;
+            lines.push_back(line);
+            fileOut << line << "\n";
+        }
+        fileOut.close();
+        REQUIRE(system(("gzip -f " + testFile).c_str()) == 0);
+        testFile = testFile + ".gz";
+    }
+    Index::IndexConfig config;
+    config.sparseLineOffsets = true;
+    Index::Builder builder(log, File(fopen(testFile.c_str(), "rb")), testFile,
+                           testFile + ".zindex");
+    unique_ptr<LineIndexer> indexer(new RegExpIndexer("id:([0-9]+)"));
+    builder.addIndexer("default", "blah", config, std::move(indexer))
+            .indexEvery(4000)
+            .build();
+    Index index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
+                              testFile + ".zindex", false);
+
+    for (size_t keyed : {1000u, 1700u}) {
+        for (size_t unkeyed : {1775u, 1850u, 1999u}) {
+            INFO("lookup " << keyed << " then " << unkeyed);
+            CaptureSink cs;
+            REQUIRE(index.getLine(keyed, cs));
+            REQUIRE(index.getLine(unkeyed, cs));
+            REQUIRE(cs.captured.size() == 2);
+            CHECK(cs.captured[0] == lines[keyed - 1]);
+            CHECK(cs.captured[1] == lines[unkeyed - 1]);
+        }
+    }
+}
+
 TEST_CASE("metadata tests", "[Index]") {
     TempDir tempDir;
     CaptureLog log;
@@ -559,14 +611,13 @@ TEST_CASE("metadata tests", "[Index]") {
                     break;
             }
             SECTION("fails without force") {
-                try {
-                    Index::load(log, File(fopen(testFile.c_str(), "rb")),
-                                testFile + ".zindex", false);
-                    FAIL("Should have thrown");
-                } catch (const exception &e) {
-                    CHECK(string(e.what()) == "Compressed file has been "
-                                              "modified since index was built");
-                }
+                REQUIRE_THROWS_MATCHES(
+                        Index::load(log, File(fopen(testFile.c_str(), "rb")),
+                                    testFile + ".zindex", false),
+                        exception,
+                        Catch::Matchers::MessageMatches(Catch::Matchers::Equals(
+                                "Compressed file has been "
+                                "modified since index was built")));
             }
             SECTION("loads with force") {
                 Index::load(log, File(fopen(testFile.c_str(), "rb")),
@@ -579,14 +630,13 @@ TEST_CASE("metadata tests", "[Index]") {
                 fputc(0, corrupter.get());
             }
             SECTION("fails without force") {
-                try {
-                    Index::load(log, File(fopen(testFile.c_str(), "rb")),
-                                testFile + ".zindex", false);
-                    FAIL("Should have thrown");
-                } catch (const exception &e) {
-                    CHECK(string(e.what()) ==
-                          "Compressed size changed since index was built");
-                }
+                REQUIRE_THROWS_MATCHES(
+                        Index::load(log, File(fopen(testFile.c_str(), "rb")),
+                                    testFile + ".zindex", false),
+                        exception,
+                        Catch::Matchers::MessageMatches(Catch::Matchers::Equals(
+                                "Compressed size changed since index was "
+                                "built")));
             }
             SECTION("loads with force") {
                 Index::load(log, File(fopen(testFile.c_str(), "rb")),
