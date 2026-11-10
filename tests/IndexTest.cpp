@@ -1,5 +1,6 @@
 #include "Index.h"
 #include "RegExpIndexer.h"
+#include "Sqlite.h"
 #include <fstream>
 
 #include "CaptureLog.h"
@@ -459,6 +460,58 @@ TEST_CASE("sparsely indexes files", "[Index]") {
         };
         CheckIndex("1", 1);
         CheckIndex("65536", 1);
+    }
+
+    SECTION("sparse line offsets shrink the file") {
+        auto build = [&](const string &indexFile, bool sparseLineOffsets) {
+            Index::Builder builder(log, File(fopen(testFile.c_str(), "rb")),
+                                   testFile, indexFile);
+            Index::IndexConfig config;
+            config.sparseLineOffsets = sparseLineOffsets;
+            // Only 1 in 20 lines are indexed: deleting every other row would
+            // leave all pages in use, hiding the bug being tested for.
+            unique_ptr<LineIndexer> indexer(
+                    new RegExpIndexer("Line ([0-9]*0) "));
+            builder.addIndexer("default", "blah", config, std::move(indexer))
+                    .indexEvery(256 * 1024)
+                    .build();
+        };
+        auto scalar = [&](const string &indexFile, const string &sql) {
+            Sqlite db(log);
+            db.open(indexFile, true);
+            auto stmt = db.prepare(sql);
+            REQUIRE_FALSE(stmt.step()); // false means a row is available
+            return stmt.columnInt64(0);
+        };
+
+        auto fullIndex = testFile + ".full.zindex";
+        auto sparseIndex = testFile + ".sparse.zindex";
+        build(fullIndex, false);
+        build(sparseIndex, true);
+
+        // Deleting rows after inserting them leaves the pages on the freelist
+        // rather than shrinking the file, so check for both symptoms.
+        CHECK(scalar(sparseIndex, "PRAGMA freelist_count") == 0);
+        CHECK(scalar(sparseIndex, "PRAGMA page_count") <
+              scalar(fullIndex, "PRAGMA page_count"));
+
+        // ...and exactly the lines with keys must have been kept.
+        auto sparseRows =
+                scalar(sparseIndex, "SELECT COUNT(*) FROM LineOffsets");
+        CHECK(sparseRows ==
+              scalar(sparseIndex, "SELECT COUNT(*) FROM index_default"));
+        CHECK(sparseRows <
+              scalar(fullIndex, "SELECT COUNT(*) FROM LineOffsets"));
+
+        // Lines without keys must still be reachable by line number.
+        Index index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
+                                  sparseIndex, false);
+        CaptureSink cs;
+        REQUIRE(index.getLine(2, cs));
+        REQUIRE(index.getLine(131072, cs));
+        REQUIRE(cs.captured.size() == 2);
+        CHECK(cs.captured[0] == "Some data1 - DataHex 1 - DataMod 1");
+        CHECK(cs.captured[1] == "Some data65536 - DataHex 10000 - DataMod 0");
     }
 }
 
