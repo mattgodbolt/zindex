@@ -19,8 +19,8 @@ else
 fi
 
 for seed in 1 2 3 4 5 6; do
-    # Lines are never empty and members are never empty: those cases are
-    # separate known problems.
+    # Lines are never empty and there is no empty member mid-file: those are
+    # separate known problems. An empty member at the very end is fine.
     python3 -I -c "
 import random, subprocess, sys
 rnd = random.Random($seed)
@@ -37,11 +37,14 @@ for a, b in zip([0] + cuts, cuts + [len(data)]):
     out.write(subprocess.run(['gzip', '-c'], input=data[a:b],
                              stdout=subprocess.PIPE, check=True).stdout)
 "
+    if [ $((seed % 2)) -eq 0 ]; then
+        gzip -c </dev/null >>"f$seed.gz"
+    fi
     gzip -dc "f$seed.gz" >"f$seed.txt"
-    total=$(wc -l <"f$seed.txt")
-    total=$((total + 1))
+    # grep -c '' also counts a final line with no newline.
+    total=$(grep -c '' "f$seed.txt")
     # Spot-check lines around a spread of positions rather than all of them.
-    lines=$(seq 1 7 "$total")
+    lines="$(seq 1 7 "$total") $((total - 1)) $total"
 
     for flags in "" "-o"; do
         # shellcheck disable=SC2086
@@ -61,10 +64,12 @@ for a, b in zip([0] + cuts, cuts + [len(data)]):
         # Several lines in one request, ascending then descending (the former
         # reuses the previous lookup's decompressor, which may need to skip
         # across a member boundary).
-        for order in "sort -n" "sort -rn"; do
+        for order in "sort -nu" "sort -rnu"; do
             # shellcheck disable=SC2046
             set -- $(echo $lines | tr ' ' '\n' | $order | head -12)
-            expected=$(for n in "$@"; do sed -n "${n}p" "f$seed.txt"; done)
+            expected=$(for n in "$@"; do
+                echo "$(sed -n "${n}p" "f$seed.txt")"
+            done)
             if ! actual=$(guard "$ZQ" "f$seed.gz" -l "$@"); then
                 echo "FAIL: seed $seed flags '$flags': multi-line zq failed"
                 exit 1

@@ -285,7 +285,7 @@ LIMIT 1)")),
           // before the target, which leaves the target wholly after it.
           sparseLineOffsetsQuery_(db_.prepare(R"(
 SELECT lineNum, compressedOffset, uncompressedOffset, bitOffset, window
-FROM AccessPoints where lineNum + 2 <= :line or lineNum = 0 order by lineNum desc
+FROM AccessPoints where lineNum + 2 <= :line or lineNum = 0 order by lineNum desc, uncompressedOffset asc
 LIMIT 1)")) {
         try {
             auto queryMeta = db_.prepare("SELECT key, value FROM Metadata");
@@ -480,9 +480,13 @@ FROM AccessPoints WHERE uncompressedOffset = :offset)");
         if (next.step())
             return false;
         auto nextCompressedOffset = static_cast<size_t>(next.columnInt64(0));
-        // A member's access point lies after the previous one's; if not (a
-        // corrupt index) we would restart the same stream forever.
-        if (nextCompressedOffset <= context.startCompressedOffset_)
+        // A member's access point lies after the previous one's. The same one
+        // means we are already in the last member and what follows is only an
+        // empty member (e.g. bgzip's EOF marker), so there is no more data.
+        // Anything earlier is a corrupt index, and would loop.
+        if (nextCompressedOffset == context.startCompressedOffset_)
+            return false;
+        if (nextCompressedOffset < context.startCompressedOffset_)
             throw ZlibError(Z_DATA_ERROR);
         context.zs_.reset();
         startStream(context, nextCompressedOffset,
