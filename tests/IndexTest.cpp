@@ -600,6 +600,65 @@ TEST_CASE("looks up several unkeyed lines after keyed lines on a sparse index",
     }
 }
 
+// Regression test for #63 on a sparse (-o) index: unkeyed lines have no stored
+// offset, so they are found by counting lines forward from an access point,
+// and that count must carry on across a gzip member boundary.
+TEST_CASE("reads unkeyed lines spanning gzip members on a sparse index",
+          "[Index]") {
+    TempDir tempDir;
+    CaptureLog log;
+    auto testFile = tempDir.path + "/test.gz";
+    auto build = [&](const vector<string> &members, const string &regex) {
+        for (size_t i = 0; i < members.size(); ++i) {
+            auto part = tempDir.path + "/part" + to_string(i);
+            {
+                ofstream out(part, ios::binary);
+                out << members[i];
+            }
+            REQUIRE(system(("gzip -c " + part + " >> " + testFile).c_str()) ==
+                    0);
+        }
+        Index::IndexConfig config;
+        config.sparseLineOffsets = true;
+        Index::Builder builder(log, File(fopen(testFile.c_str(), "rb")),
+                               testFile, testFile + ".zindex");
+        builder.addIndexer("default", "blah", config,
+                           unique_ptr<LineIndexer>(new RegExpIndexer(regex)))
+                .build();
+        return Index::load(log, File(fopen(testFile.c_str(), "rb")),
+                           testFile + ".zindex", false);
+    };
+
+    SECTION("one boundary") {
+        auto index = build({"k1\nk2\nu", "v\nk3\nw\n"}, "^(k.*)");
+        const vector<string> expected = {"k1", "k2", "uv", "k3", "w"};
+        for (size_t line = 1; line <= expected.size(); ++line) {
+            CAPTURE(line);
+            CaptureSink cs;
+            REQUIRE(index.getLine(line, cs));
+            REQUIRE(cs.captured.size() == 1);
+            CHECK(cs.captured.at(0) == expected[line - 1]);
+        }
+        // A request mixing keyed and unkeyed lines, in a shuffled order.
+        CaptureSink cs;
+        CHECK(index.getLines({4, 3, 1, 5, 2}, cs) == 5);
+        CHECK(cs.captured == vector<string>{"k3", "uv", "k1", "w", "k2"});
+    }
+
+    SECTION("several boundaries") {
+        auto index = build({"a1\na2\n", "x\ny\nz", "p", "q", "r\n", "b1\n"},
+                           "^(a.*)");
+        const vector<string> expected = {"a1", "a2", "x", "y", "zpqr", "b1"};
+        for (size_t line = 1; line <= expected.size(); ++line) {
+            CAPTURE(line);
+            CaptureSink cs;
+            REQUIRE(index.getLine(line, cs));
+            REQUIRE(cs.captured.size() == 1);
+            CHECK(cs.captured.at(0) == expected[line - 1]);
+        }
+    }
+}
+
 TEST_CASE("metadata tests", "[Index]") {
     TempDir tempDir;
     CaptureLog log;
