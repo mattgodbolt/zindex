@@ -718,6 +718,11 @@ INSERT INTO Indexes VALUES(:name, :creationString, :isNumeric)
     }
 
     void build() {
+        // With no indexers nothing would "consume" any line, so no line offsets
+        // would be saved and `zq -l N` would silently print nothing. Without a
+        // key index the line offsets are the whole point, so keep them all.
+        if (indexers.empty())
+            saveAllLines_ = true;
         addMeta("sparse", std::to_string(!saveAllLines_));
         addMeta("sparseLineOffsets", std::to_string(sparseLineOffsets_));
         log.info("Building index, generating a checkpoint every ",

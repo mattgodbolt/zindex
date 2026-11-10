@@ -179,3 +179,7 @@ enable_testing()
 # linking, which fails for Xcode builds on Apple Silicon (the binary is not yet
 # code-signed at that point).
 catch_discover_tests(unit-tests DISCOVERY_MODE PRE_TEST)
+
+add_test(NAME no-indexer-line-offsets
+         COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/no_indexer_e2e.sh
+                 $<TARGET_FILE:zindex> $<TARGET_FILE:zq>)

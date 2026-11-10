@@ -540,3 +540,67 @@ TEST_CASE("metadata tests", "[Index]") {
         }
     }
 }
+
+TEST_CASE("indexes line offsets when there are no indexers", "[Index]") {
+    TempDir tempDir;
+    CaptureLog log;
+    auto testFile = tempDir.path + "/test.log";
+    const size_t numLines = 5000;
+    {
+        ofstream fileOut(testFile);
+        for (size_t i = 1; i <= numLines; ++i)
+            fileOut << "Line " << i << "\n";
+        fileOut.close();
+        REQUIRE(system(("gzip -f " + testFile).c_str()) == 0);
+        testFile = testFile + ".gz";
+    }
+    auto indexFile = testFile + ".zindex";
+
+    auto build = [&](uint64_t skipFirst) {
+        Index::Builder builder(log, File(fopen(testFile.c_str(), "rb")),
+                               testFile, indexFile);
+        // Small checkpoint interval so lookups cross several checkpoints.
+        builder.indexEvery(4 * 1024);
+        if (skipFirst)
+            builder.skipFirst(skipFirst);
+        builder.build();
+        return Index::load(log, File(fopen(testFile.c_str(), "rb")), indexFile,
+                           false);
+    };
+    auto checkLines = [&](Index &index) {
+        for (size_t line :
+             {size_t(1), size_t(2), size_t(1000), size_t(4999), numLines}) {
+            CaptureSink cs;
+            index.getLine(line, cs);
+            INFO("line " << line);
+            REQUIRE(cs.captured.size() == 1);
+            CHECK(cs.captured.at(0) == "Line " + to_string(line));
+        }
+        CaptureSink none;
+        index.getLine(numLines + 1, none);
+        CHECK(none.captured.empty());
+    };
+
+    SECTION("stores every line") {
+        auto index = build(0);
+        checkLines(index);
+    }
+
+    SECTION("--skip-first does not lose line offsets") {
+        auto index = build(10);
+        checkLines(index);
+    }
+
+    SECTION("rebuilding over an existing index works") {
+        build(0);
+        auto index = build(0);
+        checkLines(index);
+    }
+
+    SECTION("a key query on a line-only index throws rather than crashing") {
+        auto index = build(0);
+        CaptureSink cs;
+        CHECK_THROWS(index.queryIndex("default", "1", cs));
+        CHECK(cs.captured.empty());
+    }
+}
