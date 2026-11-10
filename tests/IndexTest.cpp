@@ -358,6 +358,40 @@ TEST_CASE("indexes concatenated files", "[Index]") {
     CheckIndex(3, "Line 3 - Hex 3 - Mod 3");
 }
 
+// Regression test for #63: a line that starts in one gzip member and ends in
+// a later one (because the earlier member has no trailing newline) must be
+// returned joined, even when it spans several members.
+TEST_CASE("reads a line spanning concatenated gzip members", "[Index]") {
+    TempDir tempDir;
+    CaptureLog log;
+    auto testFile = tempDir.path + "/test.gz";
+    const vector<string> members = {"a1\na2\n", "x\ny\nz", "p",
+                                    "q",        "r\n",     "b1\n"};
+    for (size_t i = 0; i < members.size(); ++i) {
+        auto part = tempDir.path + "/part" + to_string(i);
+        {
+            ofstream out(part, ios::binary);
+            out << members[i];
+        }
+        REQUIRE(system(("gzip -c " + part + " >> " + testFile).c_str()) == 0);
+    }
+    Index::Builder builder(log, File(fopen(testFile.c_str(), "rb")), testFile,
+                           testFile + ".zindex");
+    builder.addIndexer("default", "blah", Index::IndexConfig(),
+                       unique_ptr<LineIndexer>(new RegExpIndexer("(.*)")))
+            .build();
+    Index index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
+                              testFile + ".zindex", false);
+    const vector<string> expected = {"a1", "a2", "x", "y", "zpqr", "b1"};
+    for (size_t line = 1; line <= expected.size(); ++line) {
+        CAPTURE(line);
+        CaptureSink cs;
+        REQUIRE(index.getLine(line, cs));
+        REQUIRE(cs.captured.size() == 1);
+        CHECK(cs.captured.at(0) == expected[line - 1]);
+    }
+}
+
 // Regression test: when the compressed file's size is an exact multiple of the
 // read chunk size, the end of the deflate stream is seen before EOF is, and
 // the last line (which has no terminating newline) used to crash or fail.

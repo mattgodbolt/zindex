@@ -437,24 +437,44 @@ WHERE key = :query
             log_.debug("Creating new context at offset ", compressedOffset, ":",
                        bitOffset);
             context.reset(new CachedContext(uncompressedOffset, blockSize_));
-            uint8_t window[WindowSize];
-            uncompress(windowData, window, WindowSize);
-
-            seek(compressed_,
-                 bitOffset ? compressedOffset - 1 : compressedOffset);
-            context->zs_.stream.avail_in = 0;
-            if (bitOffset) {
-                auto c = fgetc(compressed_.get());
-                if (c == -1)
-                    throw ZlibError(ferror(compressed_.get()) ? Z_ERRNO
-                                                              : Z_DATA_ERROR);
-                X(inflatePrime(&context->zs_.stream, bitOffset,
-                               c >> (8 - bitOffset)));
-            }
-            X(inflateSetDictionary(&context->zs_.stream, &window[0],
-                                   WindowSize));
+            startStream(*context, compressedOffset, bitOffset, windowData);
         }
         return context;
+    }
+
+    // Points the (freshly created or reset) raw inflater at an access point.
+    void startStream(CachedContext &context, size_t compressedOffset,
+                     int bitOffset, const std::vector<uint8_t> &windowData) {
+        uint8_t window[WindowSize];
+        uncompress(windowData, window, WindowSize);
+
+        seek(compressed_, bitOffset ? compressedOffset - 1 : compressedOffset);
+        context.zs_.stream.avail_in = 0;
+        if (bitOffset) {
+            auto c = fgetc(compressed_.get());
+            if (c == -1)
+                throw ZlibError(ferror(compressed_.get()) ? Z_ERRNO
+                                                          : Z_DATA_ERROR);
+            X(inflatePrime(&context.zs_.stream, bitOffset,
+                           c >> (8 - bitOffset)));
+        }
+        X(inflateSetDictionary(&context.zs_.stream, &window[0], WindowSize));
+    }
+
+    // A gzip member ended part way through a line. Every member start has an
+    // access point (see the build loop), so carry on decoding from the one at
+    // the current uncompressed offset. Returns false if there isn't one.
+    bool continueInNextMember(CachedContext &context) {
+        auto next = db_.prepare(R"(
+SELECT compressedOffset, bitOffset, window
+FROM AccessPoints WHERE uncompressedOffset = :offset)");
+        next.bindInt64(":offset", context.uncompressedOffset_);
+        if (next.step())
+            return false;
+        context.zs_.reset();
+        startStream(context, static_cast<size_t>(next.columnInt64(0)),
+                    static_cast<int>(next.columnInt64(1)), next.columnBlob(2));
+        return true;
     }
 
     void print(size_t lineNum, size_t line, size_t offset,
@@ -621,11 +641,15 @@ WHERE key = :query
                     // whole line before we destroy it. A final line with no
                     // terminating newline is indexed as if it had one, so one
                     // byte of the buffer legitimately goes unused.
-                    const bool haveWholeLine = zs.stream.avail_out <= 1;
-                    context.reset();
-                    if (!haveWholeLine)
+                    if (zs.stream.avail_out <= 1) {
+                        context.reset();
+                        break;
+                    }
+                    // The line continues in the next member (this one had no
+                    // trailing newline): resume there into the same buffer.
+                    if (!continueInNextMember(*context))
                         throw ZlibError(Z_DATA_ERROR);
-                    break;
+                    continue;
                 }
             } while (zs.stream.avail_out);
         } while (skipping);
