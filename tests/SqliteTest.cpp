@@ -1,6 +1,8 @@
 #include "Sqlite.h"
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_exception.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 
 #include "CaptureLog.h"
 #include "SqliteError.h"
@@ -52,13 +54,10 @@ TEST_CASE("prepares statements", "[Sqlite]") {
     auto s = sqlite.prepare("create table t(one varchar(10), two integer)");
 
     SECTION("handles exceptions") {
-        std::string threw;
-        try {
-            sqlite.prepare("SELECT * FROM foo");
-        } catch (const SqliteError &e) {
-            threw = e.what();
-        }
-        CHECK(threw == "no such table: foo (SELECT * FROM foo)");
+        REQUIRE_THROWS_MATCHES(
+                sqlite.prepare("SELECT * FROM foo"), SqliteError,
+                Catch::Matchers::MessageMatches(Catch::Matchers::Equals(
+                        "no such table: foo (SELECT * FROM foo)")));
     }
 }
 
