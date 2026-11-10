@@ -24,18 +24,33 @@ cJSON *IndexParser::parseConfig() const {
 void IndexParser::checkNames() {
     cJSON *root = parseConfig();
     cJSON *indexes = cJSON_GetObjectItem(root, "indexes");
-    std::vector<std::string> names;
+    std::vector<std::pair<std::string, Index::IndexConfig>> specs;
     auto arraySize = cJSON_GetArraySize(indexes);
-    for (int i = 0; i < arraySize; i++)
-        names.push_back(nameOf(cJSON_GetArrayItem(indexes, i)));
+    for (int i = 0; i < arraySize; i++) {
+        auto *index = cJSON_GetArrayItem(indexes, i);
+        specs.emplace_back(nameOf(index), configOf(index));
+    }
     cJSON_Delete(root);
-    Index::checkIndexNames(names);
+    Index::checkIndexNames(specs);
+}
+
+Index::IndexConfig IndexParser::configOf(cJSON *index) const {
+    Index::IndexConfig config{};
+    config.numeric = getBoolean(index, "numeric");
+    config.unique = getBoolean(index, "unique");
+    config.sparse = getBoolean(index, "sparse");
+    config.indexLineOffsets = getBoolean(index, "indexLineOffsets");
+    config.sparseLineOffsets = getBoolean(index, "sparseLineOffsets");
+    return config;
 }
 
 std::string IndexParser::nameOf(cJSON *index) const {
-    if (cJSON_HasObjectItem(index, "name"))
-        return cJSON_GetObjectItem(index, "name")->valuestring;
-    return "default";
+    if (!cJSON_HasObjectItem(index, "name"))
+        return "default";
+    auto *name = cJSON_GetObjectItem(index, "name");
+    if (name->type != cJSON_String || name->valuestring == nullptr)
+        throw std::runtime_error("An index's \"name\" must be a string");
+    return name->valuestring;
 }
 
 void IndexParser::buildIndexes(Index::Builder *builder, ConsoleLog &log) {
@@ -55,12 +70,7 @@ void IndexParser::parseIndex(cJSON *index, Index::Builder *builder,
     }
     std::string indexName = nameOf(index);
     std::string type = cJSON_GetObjectItem(index, "type")->valuestring;
-    Index::IndexConfig config{};
-    config.numeric = getBoolean(index, "numeric");
-    config.unique = getBoolean(index, "unique");
-    config.sparse = getBoolean(index, "sparse");
-    config.indexLineOffsets = getBoolean(index, "indexLineOffsets");
-    config.sparseLineOffsets = getBoolean(index, "sparseLineOffsets");
+    Index::IndexConfig config = configOf(index);
 
     if (type == "regex") {
         auto regex = getOrThrowStr(index, "regex");

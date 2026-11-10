@@ -57,6 +57,21 @@ for cfg in '"name":"my-idx"' '"name":"a"},{"type":"field","delimiter":" ","field
     }
 done
 
+# Indexes derived from one name (<name>_line_index) must not clash with another
+# index's table, and non-string names are a clear error. Neither may touch the
+# existing index.
+printf '%s' '{"indexes":[
+ {"type":"field","delimiter":" ","fieldNum":1,"indexLineOffsets":true,"name":"a"},
+ {"type":"field","delimiter":" ","fieldNum":2,"name":"A_Line_Index"}]}' >clash.json
+expect_failure "clashes" "$ZINDEX" --config clash.json -o n.gz
+cmp good.zindex n.gz.zindex || { echo "FAIL: clash damaged index"; exit 1; }
+for v in 5 null true '[1]' '{}'; do
+    printf '{"indexes":[{"type":"field","delimiter":" ","fieldNum":1,"name":%s}]}' \
+        "$v" >bad.json
+    expect_failure "must be a string" "$ZINDEX" --config bad.json -o n.gz
+    cmp good.zindex n.gz.zindex || { echo "FAIL: $v damaged index"; exit 1; }
+done
+
 # Names SQLite accepts unquoted keep working, and -i is case-insensitive.
 printf '{"indexes":[{"type":"field","delimiter":" ","fieldNum":1,"name":"caf\\u00e9"}]}' \
     >u.json

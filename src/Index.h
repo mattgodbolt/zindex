@@ -160,10 +160,15 @@ public:
         void build();
     };
 
-    // Throws if any of the names cannot be used as an index name, or if two
-    // collide (index names are case-insensitive). Called by the builder, and
-    // available so callers can check before touching an existing index file.
-    static void checkIndexNames(const std::vector<std::string> &names);
+    // Throws if any of the names cannot be used as an index name, or if the
+    // SQL objects built for two indexes would collide (index names are
+    // case-insensitive). Called by the builder, and available so callers can
+    // check before touching an existing index file. The config matters because
+    // it decides which SQL indexes are created alongside each table
+    // (index_<name>_line_index / _key_index), and those must not clash with
+    // another index's table.
+    static void checkIndexNames(
+            const std::vector<std::pair<std::string, IndexConfig>> &indexes);
 
     // True if the names are the same index (ASCII case-insensitive).
     static bool sameIndexName(const std::string &a, const std::string &b);
