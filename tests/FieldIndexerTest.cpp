@@ -41,3 +41,23 @@ TEST_CASE("field indexes", "[FieldIndexer]") {
         CHECK(sink.captured == vs({"bibble"}));
     }
 }
+
+TEST_CASE("delimiter escapes", "[FieldIndexer]") {
+    CHECK(unescapeDelimiter("\\t") == "\t");
+    // Everything else is passed through untouched.
+    CHECK(unescapeDelimiter("\t") == "\t");
+    CHECK(unescapeDelimiter(" ") == " ");
+    CHECK(unescapeDelimiter(",") == ",");
+    CHECK(unescapeDelimiter("::") == "::");
+    CHECK(unescapeDelimiter("\\") == "\\");
+    CHECK(unescapeDelimiter("\\n") == "\\n");
+    CHECK(unescapeDelimiter("a\\t") == "a\\t");
+    CHECK(unescapeDelimiter("") == "");
+}
+
+TEST_CASE("escaped tab delimiter splits on tabs", "[FieldIndexer]") {
+    CaptureSink sink;
+    FieldIndexer indexer(unescapeDelimiter("\\t"), 2);
+    indexer.index(sink, "a\tb\tc");
+    CHECK(sink.captured == vs({"b"}));
+}

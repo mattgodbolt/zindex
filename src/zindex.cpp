@@ -71,8 +71,9 @@ int Main(int argc, const char *argv[]) {
                                 "config file <file>",
                                 false, "", "indexes", cmd);
     ValueArg<string> delimiterArg("d", "delimiter",
-                                  "Use <delim> as the field delimiter", false,
-                                  " ", "delim", cmd);
+                                  "Use <delim> as the field delimiter "
+                                  "(\\t, as typed, means a tab)",
+                                  false, " ", "delim", cmd);
     SwitchArg tabDelimiterArg("", "tab-delimiter",
                               "Use a tab character as the field delimiter",
                               cmd);
@@ -128,6 +129,8 @@ int Main(int argc, const char *argv[]) {
         }
         if (tabDelimiterArg.isSet())
             delimiter = "\t";
+        else
+            delimiter = unescapeDelimiter(delimiter);
 
         if (configFile.isSet()) {
             auto indexParser = IndexParser(configFile.getValue());
