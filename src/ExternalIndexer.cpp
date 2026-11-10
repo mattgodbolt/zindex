@@ -1,6 +1,9 @@
 #include "ExternalIndexer.h"
 #include "IndexSink.h"
+#include <errno.h>
+#include <fcntl.h>
 #include <iostream>
+#include <poll.h>
 #include <signal.h>
 #include <stdexcept>
 #include <string.h>
@@ -18,6 +21,13 @@ void X(int error) {
 } // namespace
 
 void ExternalIndexer::index(IndexSink &sink, StringView line) {
+    if (pipelined_)
+        indexPipelined(sink, line);
+    else
+        indexSynchronously(sink, line);
+}
+
+void ExternalIndexer::indexSynchronously(IndexSink &sink, StringView line) {
     log_.debug("Writing to child...");
     auto bytes = ::write(sendPipe_.writeFd(), line.begin(), line.length());
     if (bytes != (ssize_t)line.length()) {
@@ -51,10 +61,13 @@ void ExternalIndexer::index(IndexSink &sink, StringView line) {
                     "'");
         }
     }
-    auto ptr = &buf[0];
-    auto end = &buf[buf.size() - 1];
+    addKeys(sink, &buf[0], &buf[buf.size() - 1]);
+}
+
+void ExternalIndexer::addKeys(IndexSink &sink, const char *ptr,
+                              const char *end) {
     while (ptr < end) {
-        auto nextSep = static_cast<char *>(
+        auto nextSep = static_cast<const char *>(
                 memmem(ptr, end - ptr, separator_.c_str(), separator_.size()));
         if (!nextSep)
             nextSep = end;
@@ -65,9 +78,100 @@ void ExternalIndexer::index(IndexSink &sink, StringView line) {
     }
 }
 
+// Writing a line and reading replies are interleaved with poll() so neither
+// direction can fill its pipe and stall the other: a command that is blocked
+// writing its output to us still gets that output read, and one that reads all
+// its input before replying is never starved of input.
+void ExternalIndexer::indexPipelined(IndexSink &sink, StringView line) {
+    if (sendPipe_.writeFd() < 0)
+        throw std::runtime_error("Child process input already closed");
+    const auto currentLine = sink.line();
+    pending_.push_back(currentLine);
+    std::string data(line.begin(), line.length());
+    data += '\n';
+    size_t written = 0;
+    while (written < data.size()) {
+        pollfd fds[2] = {{sendPipe_.writeFd(), POLLOUT, 0},
+                         {receivePipe_.readFd(), POLLIN, 0}};
+        if (::poll(fds, 2, -1) < 0) {
+            if (errno == EINTR)
+                continue;
+            throw std::runtime_error("Unable to wait for child process");
+        }
+        // Reading first frees the child to make progress on its own writes.
+        if (fds[1].revents && !readOutput(sink))
+            throw std::runtime_error("Child process died");
+        if (fds[0].revents & (POLLERR | POLLHUP))
+            throw std::runtime_error("Unable to write to child process");
+        if (fds[0].revents & POLLOUT) {
+            auto bytes = ::write(sendPipe_.writeFd(), data.data() + written,
+                                 data.size() - written);
+            if (bytes > 0)
+                written += bytes;
+            else if (bytes < 0 && errno != EAGAIN && errno != EINTR)
+                throw std::runtime_error("Unable to write to child process");
+        }
+    }
+    // Pick up replies that are already waiting, so that a command which does
+    // reply promptly never builds up a backlog.
+    for (;;) {
+        pollfd readable = {receivePipe_.readFd(), POLLIN, 0};
+        if (::poll(&readable, 1, 0) <= 0 || !readable.revents)
+            break;
+        if (!readOutput(sink))
+            throw std::runtime_error("Child process died");
+    }
+    sink.setLine(currentLine);
+}
+
+void ExternalIndexer::finish(IndexSink &sink) {
+    if (!pipelined_)
+        return;
+    const auto currentLine = sink.line();
+    sendPipe_.closeWrite(); // EOF is what makes a buffering command reply.
+    while (readOutput(sink)) {
+    }
+    if (!partialOutput_.empty())
+        throw std::runtime_error("Child process output ended mid-line");
+    if (!pending_.empty())
+        throw std::runtime_error(
+                "Child process emitted fewer lines than it was sent (" +
+                std::to_string(pending_.size()) + " missing)");
+    sink.setLine(currentLine);
+}
+
+bool ExternalIndexer::readOutput(IndexSink &sink) {
+    char buf[65536];
+    ssize_t bytes;
+    do {
+        bytes = ::read(receivePipe_.readFd(), buf, sizeof(buf));
+    } while (bytes < 0 && errno == EINTR);
+    if (bytes < 0)
+        throw std::runtime_error("Error reading from child process");
+    if (bytes == 0)
+        return false;
+    partialOutput_.append(buf, bytes);
+    size_t start = 0;
+    while (auto *newline = static_cast<const char *>(
+                   memchr(partialOutput_.data() + start, '\n',
+                          partialOutput_.size() - start))) {
+        auto begin = partialOutput_.data() + start;
+        if (pending_.empty())
+            throw std::runtime_error(
+                    "Child process emitted more than one line: '" +
+                    std::string(begin, newline - begin) + "'");
+        sink.setLine(pending_.front());
+        pending_.pop_front();
+        addKeys(sink, begin, newline);
+        start = newline + 1 - partialOutput_.data();
+    }
+    partialOutput_.erase(0, start);
+    return true;
+}
+
 ExternalIndexer::ExternalIndexer(Log &log, const std::string &command,
-                                 const std::string &separator)
-    : log_(log), childPid_(0), separator_(separator) {
+                                 const std::string &separator, bool pipelined)
+    : log_(log), childPid_(0), separator_(separator), pipelined_(pipelined) {
     auto forkResult = fork();
     if (forkResult == -1) {
         log_.error("Unable to fork: ", errno);
@@ -79,6 +183,13 @@ ExternalIndexer::ExternalIndexer(Log &log, const std::string &command,
     log_.debug("Forked child process ", childPid_);
     sendPipe_.closeRead();
     receivePipe_.closeWrite();
+    if (pipelined_) {
+        // So a write never blocks half-way with a reply waiting to be read.
+        auto flags = fcntl(sendPipe_.writeFd(), F_GETFL);
+        if (flags == -1 ||
+            fcntl(sendPipe_.writeFd(), F_SETFL, flags | O_NONBLOCK) == -1)
+            throw std::runtime_error("Unable to make child pipe non-blocking");
+    }
     signal(SIGCHLD, SIG_IGN);
     signal(SIGPIPE, SIG_IGN);
 }
@@ -87,7 +198,9 @@ ExternalIndexer::~ExternalIndexer() {
     if (childPid_ > 0) {
         log_.debug("Sending child process TERM");
         auto result = kill(childPid_, SIGTERM);
-        if (result == -1) {
+        // The child may already have exited (and, as SIGCHLD is ignored, been
+        // reaped), e.g. once it has seen EOF.
+        if (result == -1 && errno != ESRCH) {
             log_.error("Unable to send kill: ", errno);
             std::terminate();
         }

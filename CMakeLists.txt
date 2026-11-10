@@ -178,8 +178,16 @@ enable_testing()
 # PRE_TEST discovers at ctest time rather than running the binary straight after
 # linking, which fails for Xcode builds on Apple Silicon (the binary is not yet
 # code-signed at that point).
-catch_discover_tests(unit-tests DISCOVERY_MODE PRE_TEST)
+# The timeout turns a regression to a deadlocked pipe into a failure rather than
+# a hung CI job.
+catch_discover_tests(unit-tests DISCOVERY_MODE PRE_TEST
+                     PROPERTIES TIMEOUT 120)
 
 add_test(NAME no-indexer-line-offsets
          COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/no_indexer_e2e.sh
                  $<TARGET_FILE:zindex> $<TARGET_FILE:zq>)
+
+add_test(NAME pipe-buffered-command
+         COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/pipe_buffered_e2e.sh
+                 $<TARGET_FILE:zindex> $<TARGET_FILE:zq>)
+set_tests_properties(pipe-buffered-command PROPERTIES TIMEOUT 120)

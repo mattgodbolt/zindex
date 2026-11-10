@@ -23,11 +23,13 @@ void Pipe::close() {
 void Pipe::closeRead() {
     if (pipeFds_[0] != -1)
         ::close(pipeFds_[0]);
+    pipeFds_[0] = -1;
 }
 
 void Pipe::closeWrite() {
     if (pipeFds_[1] != -1)
         ::close(pipeFds_[1]);
+    pipeFds_[1] = -1;
 }
 
 Pipe::Pipe(Pipe &&other) {
