@@ -239,6 +239,8 @@ struct NumericHandler : IndexHandler {
 
 struct CachedContext {
     size_t uncompressedOffset_;
+    // Where the access point this raw stream was started from begins.
+    size_t startCompressedOffset_ = 0;
     size_t blockSize_;
     uint8_t input_[ChunkSize];
     ZStream zs_;
@@ -276,9 +278,14 @@ FROM LineOffsets lo, AccessPoints ap
 WHERE lo.offset >= ap.uncompressedOffset AND offset <= ap.uncompressedEndOffset
 AND lo.line = :line
 LIMIT 1)")),
+          // An access point can fall part way through a line (notably at the
+          // start of a gzip member whose predecessor lacks a trailing
+          // newline), and lineNum then counts that partial line as already
+          // complete. So only start counting from one at least two lines
+          // before the target, which leaves the target wholly after it.
           sparseLineOffsetsQuery_(db_.prepare(R"(
 SELECT lineNum, compressedOffset, uncompressedOffset, bitOffset, window
-FROM AccessPoints where lineNum <= :line order by lineNum desc
+FROM AccessPoints where lineNum + 2 <= :line or lineNum = 0 order by lineNum desc, uncompressedOffset asc
 LIMIT 1)")) {
         try {
             auto queryMeta = db_.prepare("SELECT key, value FROM Metadata");
@@ -437,24 +444,54 @@ WHERE key = :query
             log_.debug("Creating new context at offset ", compressedOffset, ":",
                        bitOffset);
             context.reset(new CachedContext(uncompressedOffset, blockSize_));
-            uint8_t window[WindowSize];
-            uncompress(windowData, window, WindowSize);
-
-            seek(compressed_,
-                 bitOffset ? compressedOffset - 1 : compressedOffset);
-            context->zs_.stream.avail_in = 0;
-            if (bitOffset) {
-                auto c = fgetc(compressed_.get());
-                if (c == -1)
-                    throw ZlibError(ferror(compressed_.get()) ? Z_ERRNO
-                                                              : Z_DATA_ERROR);
-                X(inflatePrime(&context->zs_.stream, bitOffset,
-                               c >> (8 - bitOffset)));
-            }
-            X(inflateSetDictionary(&context->zs_.stream, &window[0],
-                                   WindowSize));
+            startStream(*context, compressedOffset, bitOffset, windowData);
         }
         return context;
+    }
+
+    // Points the (freshly created or reset) raw inflater at an access point.
+    void startStream(CachedContext &context, size_t compressedOffset,
+                     int bitOffset, const std::vector<uint8_t> &windowData) {
+        uint8_t window[WindowSize];
+        uncompress(windowData, window, WindowSize);
+
+        context.startCompressedOffset_ = compressedOffset;
+        seek(compressed_, bitOffset ? compressedOffset - 1 : compressedOffset);
+        context.zs_.stream.avail_in = 0;
+        if (bitOffset) {
+            auto c = fgetc(compressed_.get());
+            if (c == -1)
+                throw ZlibError(ferror(compressed_.get()) ? Z_ERRNO
+                                                          : Z_DATA_ERROR);
+            X(inflatePrime(&context.zs_.stream, bitOffset,
+                           c >> (8 - bitOffset)));
+        }
+        X(inflateSetDictionary(&context.zs_.stream, &window[0], WindowSize));
+    }
+
+    // A gzip member ended part way through a line. Every member start has an
+    // access point (see the build loop), so carry on decoding from the one at
+    // the current uncompressed offset. Returns false if there isn't one.
+    bool continueInNextMember(CachedContext &context) {
+        auto next = db_.prepare(R"(
+SELECT compressedOffset, bitOffset, window
+FROM AccessPoints WHERE uncompressedOffset = :offset)");
+        next.bindInt64(":offset", context.uncompressedOffset_);
+        if (next.step())
+            return false;
+        auto nextCompressedOffset = static_cast<size_t>(next.columnInt64(0));
+        // A member's access point lies after the previous one's. The same one
+        // means we are already in the last member and what follows is only an
+        // empty member (e.g. bgzip's EOF marker), so there is no more data.
+        // Anything earlier is a corrupt index, and would loop.
+        if (nextCompressedOffset == context.startCompressedOffset_)
+            return false;
+        if (nextCompressedOffset < context.startCompressedOffset_)
+            throw ZlibError(Z_DATA_ERROR);
+        context.zs_.reset();
+        startStream(context, nextCompressedOffset,
+                    static_cast<int>(next.columnInt64(1)), next.columnBlob(2));
+        return true;
     }
 
     void print(size_t lineNum, size_t line, size_t offset,
@@ -484,11 +521,6 @@ WHERE key = :query
             bool first = true;
             auto ret = 0;
             uint8_t window[WindowSize];
-            // `zs` refers into `context`, which is freed at the end of a
-            // concatenated gzip member, so remember how much of the window
-            // was left over at that point.
-            uInt availOutAtStreamEnd = 0;
-
             do {
                 if (zs.stream.avail_in == 0) {
                     zs.stream.avail_in =
@@ -534,16 +566,15 @@ WHERE key = :query
                     log_.debug("Resetting stream at EOS at offset ",
                                context->uncompressedOffset_);
                     // As we opened the stream in RAW mode we can't continue
-                    // decoding from here: the decoder doesn't know if there's
-                    // a trailing CRC or similar here. So we have to throw away
-                    // state at this point. We know the indexer always stops us
-                    // from crossing a divide here. We check we weren't skipping
-                    // still (which we ought not to be...) and then chuck the
-                    // whole context out.  Ideally we'd skip the (optional?)
-                    // trailer and reset the zlib state back in normal, non-raw
-                    // mode and play on.
-                    availOutAtStreamEnd = zs.stream.avail_out;
-                    context.reset();
+                    // decoding from here: the decoder doesn't know about the
+                    // gzip trailer and next header. Every member start has an
+                    // access point though, so restart the decoder from that
+                    // one, keeping the output window, so a line spanning the
+                    // boundary is joined.
+                    // If there is none, this was the last member (we just
+                    // hadn't seen EOF yet) and we are done.
+                    if (continueInNextMember(*context))
+                        ret = Z_OK;
                 }
                 if (oneLiner.lastLineNum > line) {
                     // passed the line
@@ -551,10 +582,7 @@ WHERE key = :query
                 }
 
             } while (ret != Z_STREAM_END);
-            finder.add(window,
-                       WindowSize - (context ? zs.stream.avail_out
-                                             : availOutAtStreamEnd),
-                       true);
+            finder.add(window, WindowSize - zs.stream.avail_out, true);
 
             return;
         }
@@ -611,26 +639,24 @@ WHERE key = :query
                     log_.debug("Resetting stream at EOS at offset ",
                                context->uncompressedOffset_);
                     // As we opened the stream in RAW mode we can't continue
-                    // decoding from here: the decoder doesn't know if there's
-                    // a trailing CRC or similar here. So we have to throw away
-                    // state at this point. We know the indexer always stops us
-                    // from crossing a divide here. We check we weren't skipping
-                    // still (which we ought not to be...) and then chuck the
-                    // whole context out.  Ideally we'd skip the (optional?)
-                    // trailer and reset the zlib state back in normal, non-raw
-                    // mode and play on.
-                    if (skipping)
-                        throw std::runtime_error(
-                                "Tried to cross a gzip stream boundary");
+                    // decoding from here: the decoder doesn't know about the
+                    // gzip trailer and next header. Every member start has an
+                    // access point, so restart the decoder from it if we are
+                    // still skipping towards the line (a reused context can
+                    // sit in an earlier member than the line) or the line
+                    // continues into the next member.
+                    //
                     // `zs` refers into `context`, so decide whether we have the
                     // whole line before we destroy it. A final line with no
                     // terminating newline is indexed as if it had one, so one
                     // byte of the buffer legitimately goes unused.
-                    const bool haveWholeLine = zs.stream.avail_out <= 1;
-                    context.reset();
-                    if (!haveWholeLine)
+                    if (!skipping && zs.stream.avail_out <= 1) {
+                        context.reset();
+                        break;
+                    }
+                    if (!continueInNextMember(*context))
                         throw ZlibError(Z_DATA_ERROR);
-                    break;
+                    continue;
                 }
             } while (zs.stream.avail_out);
         } while (skipping);
