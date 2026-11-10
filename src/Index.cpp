@@ -12,6 +12,7 @@
 #include "PrettyBytes.h"
 #include "StringView.h"
 #include <algorithm>
+#include <cctype>
 #include <cstdint>
 #include <cstring>
 #include <iostream>
@@ -374,6 +375,23 @@ LIMIT 1)")) {
 
     size_t queryIndex(const std::string &index, const std::string &query,
                       LineFunction lineFunc) {
+        // Checking against the Indexes table gives a useful message, and means
+        // an arbitrary -i value never reaches the SQL below.
+        auto names = db_.prepare("SELECT name FROM Indexes ORDER BY name");
+        std::string available;
+        bool found = false;
+        while (!names.step()) {
+            auto name = names.columnString(0);
+            found |= name == index;
+            available += (available.empty() ? "" : ", ") + name;
+        }
+        if (!found) {
+            throw std::runtime_error(
+                    "This index has no '" + index + "' index; " +
+                    (available.empty() ? std::string("it contains no indexes")
+                                       : "it contains: " + available +
+                                                 " (use -i <name>)"));
+        }
         auto stmt = db_.prepare(R"(
 SELECT line FROM index_)" + index +
                                 R"(
@@ -896,6 +914,17 @@ INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
         // once
         saveAllLines_ |= !config.sparse;
         sparseLineOffsets_ |= config.sparseLineOffsets;
+        // The name is spliced into SQL as part of a table name, so only allow
+        // characters that need no quoting (this also rules out injection).
+        if (name.empty() ||
+            !std::all_of(name.begin(), name.end(), [](unsigned char c) {
+                return std::isalnum(c) || c == '_';
+            })) {
+            throw std::runtime_error(
+                    "Invalid index name '" + name +
+                    "': names must be non-empty and contain only ASCII "
+                    "letters, digits and underscores");
+        }
         auto table = "index_" + name;
         std::string type = config.numeric ? "INTEGER" : "TEXT";
         if (config.unique)

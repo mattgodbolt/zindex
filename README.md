@@ -107,8 +107,8 @@ then specify which index to query with the `-i <index>` option of `zq`. An index
 `default`, and is the one `zq` queries when no `-i` is given.
 
 Fields are always selected by their 1-based number (`--field` or `fieldNum`); selecting a field by column name
-is not supported. Index names must only contain letters, digits and underscores (they become part of an SQL
-table name). If every index in the configuration has a `"name"`, there is no `default` index, so `zq` needs `-i`
+is not supported. Index names must only contain ASCII letters, digits and underscores (they become part of an SQL
+table name); anything else is rejected with an error. If every index in the configuration has a `"name"`, there is no `default` index, so `zq` needs `-i`
 to say which one to query.
 
 For example, to index columns 1 and 2 (`#CHROM` and `POS`) of a tab-delimited VCF file, use this configuration:

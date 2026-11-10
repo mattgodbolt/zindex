@@ -9,6 +9,7 @@
 #include <FieldIndexer.h>
 #include <Index.h>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <unordered_map>
@@ -16,6 +17,7 @@
 #include <zlib.h>
 
 using namespace std;
+using Catch::Matchers::ContainsSubstring;
 
 namespace {
 
@@ -655,5 +657,73 @@ TEST_CASE("indexes line offsets when there are no indexers", "[Index]") {
         CaptureSink cs;
         CHECK_THROWS(index.queryIndex("default", "1", cs));
         CHECK(cs.captured.empty());
+    }
+}
+
+TEST_CASE("index names are validated and missing indexes explained",
+          "[Index]") {
+    TempDir tempDir;
+    CaptureLog log;
+    auto testFile = tempDir.path + "/names.log";
+    {
+        ofstream fileOut(testFile);
+        fileOut << "a 1\nb 2\n";
+    }
+    REQUIRE(system(("gzip -f " + testFile).c_str()) == 0);
+    testFile += ".gz";
+
+    auto makeBuilder = [&] {
+        return Index::Builder(log, File(fopen(testFile.c_str(), "rb")),
+                              testFile, testFile + ".zindex");
+    };
+    auto addNamed = [&](Index::Builder &builder, const std::string &name) {
+        builder.addIndexer(name, "blah", Index::IndexConfig(),
+                           std::make_unique<FieldIndexer>(" ", 1));
+    };
+
+    SECTION("names that are not plain identifiers are rejected clearly") {
+        for (const char *bad : {"my-idx", "two words", "", "a;b", "x\"y"}) {
+            auto builder = makeBuilder();
+            INFO("name '" << bad << "'");
+            CHECK_THROWS_WITH(addNamed(builder, bad),
+                              ContainsSubstring("Invalid index name") &&
+                                      !ContainsSubstring("CREATE TABLE") &&
+                                      !ContainsSubstring("syntax"));
+        }
+    }
+
+    SECTION("letters, digits and underscores are accepted") {
+        auto builder = makeBuilder();
+        CHECK_NOTHROW(addNamed(builder, "Ok_name_9"));
+    }
+
+    SECTION("querying a missing index lists the ones that exist") {
+        auto builder = makeBuilder();
+        addNamed(builder, "first");
+        addNamed(builder, "second");
+        builder.build();
+        auto index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
+                                 testFile + ".zindex", false);
+        CaptureSink cs;
+        CHECK_THROWS_WITH(index.queryIndex("default", "a", cs),
+                          ContainsSubstring("no 'default' index") &&
+                                  ContainsSubstring("first, second") &&
+                                  ContainsSubstring("-i") &&
+                                  !ContainsSubstring("no such table"));
+        // Names never reach SQL unchecked.
+        CHECK_THROWS_WITH(index.queryIndex("first; DROP TABLE x", "a", cs),
+                          ContainsSubstring("no 'first; DROP TABLE x' index"));
+        CHECK(index.queryIndex("first", "a", cs) == 1);
+    }
+
+    SECTION("an index with no indexers says there are none") {
+        auto builder = makeBuilder();
+        builder.build();
+        auto index = Index::load(log, File(fopen(testFile.c_str(), "rb")),
+                                 testFile + ".zindex", false);
+        CaptureSink cs;
+        CHECK_THROWS_WITH(index.queryIndex("default", "a", cs),
+                          ContainsSubstring("no 'default' index") &&
+                                  ContainsSubstring("no indexes"));
     }
 }
