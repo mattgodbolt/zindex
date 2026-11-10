@@ -83,7 +83,8 @@ int Main(int argc, const char *argv[]) {
             "a single line for each input line. "
             "Multiple keys should be separated by the --delimiter "
             "character (which defaults to a space). "
-            "The CMD should be unbuffered "
+            "CMD may buffer its output, except with --sparse, where it "
+            "should be unbuffered "
             "(man stdbuf(1) for one way of doing this).\n"
             "Example:  --pipe 'jq --raw-output --unbuffered .eventId')",
             false, "", "CMD", cmd);
@@ -162,7 +163,11 @@ int Main(int argc, const char *argv[]) {
             }
             if (externalIndexer.isSet()) {
                 auto indexer = std::unique_ptr<LineIndexer>(new ExternalIndexer(
-                        log, externalIndexer.getValue(), delimiter));
+                        log, externalIndexer.getValue(), delimiter,
+                        // --sparse needs each line's keys as soon as the line
+                        // is given, to decide whether to keep it, so it can't
+                        // wait for a buffering command.
+                        !config.sparse));
                 builder.addIndexer("default", externalIndexer.getValue(),
                                    config, std::move(indexer));
             }

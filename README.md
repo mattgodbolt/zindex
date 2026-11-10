@@ -45,6 +45,10 @@ with multiple matches separated by spaces (which is the default separator).
 $ zindex file.gz --pipe "jq --raw-output --unbuffered '[.actions[].orderId.id] | join(\" \")'"
 ```
 
+The command must print exactly one line for each line it is given, in order. It may buffer its output (`zindex` keeps
+feeding it while reading its output), except with `-s`/`--sparse`, where the command must flush after each line
+(e.g. `jq --unbuffered`) or `zindex` will wait forever.
+
 Multiple indices, and configuration of the index creation by JSON configuration file are supported, see below.
 
 ## Querying the index

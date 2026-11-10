@@ -15,6 +15,7 @@
 #include <cctype>
 #include <cstdint>
 #include <cstring>
+#include <functional>
 #include <iostream>
 #include <stdexcept>
 #include <sys/stat.h>
@@ -157,11 +158,35 @@ struct IndexHandler : IndexSink {
     std::unique_ptr<LineIndexer> indexer;
     uint64_t currentLine;
     bool indexed = false;
+    // Told which line each key belongs to, for the sake of indexers that
+    // deliver their keys after onLine() has returned.
+    std::function<void(uint64_t)> onKeyForLine;
 
     IndexHandler(Log &log, std::unique_ptr<LineIndexer> indexer)
         : log(log), indexer(std::move(indexer)), currentLine(0) {}
 
     ~IndexHandler() override = default;
+
+    void noteKey() {
+        indexed = true;
+        if (onKeyForLine)
+            onKeyForLine(currentLine);
+    }
+
+    uint64_t line() const override { return currentLine; }
+    void setLine(uint64_t line) override { currentLine = line; }
+
+    // Collects any results the indexer delivers late.
+    void finish() {
+        try {
+            indexer->finish(*this);
+        } catch (const LineError &e) {
+            throw std::runtime_error(describe(e.line, e.text, e.what()));
+        } catch (const std::exception &e) {
+            throw std::runtime_error(
+                    std::string("Failed to finish indexing: ") + e.what());
+        }
+    }
 
     bool onLine(uint64_t lineNumber, const char *line, size_t length) {
         try {
@@ -171,11 +196,18 @@ struct IndexHandler : IndexSink {
             log.debug("Indexing line '", stringView, "'");
             indexer->index(*this, stringView);
             return indexed;
+        } catch (const LineError &e) {
+            throw std::runtime_error(describe(e.line, e.text, e.what()));
         } catch (const std::exception &e) {
             throw std::runtime_error(
-                    "Failed to index line " + std::to_string(currentLine) +
-                    ": '" + std::string(line, length) + "' - " + e.what());
+                    describe(currentLine, std::string(line, length), e.what()));
         }
+    }
+
+    static std::string describe(uint64_t line, const std::string &text,
+                                const char *what) {
+        return "Failed to index line " + std::to_string(line) + ": '" + text +
+               "' - " + what;
     }
 };
 
@@ -187,7 +219,7 @@ struct AlphaHandler : IndexHandler {
         : IndexHandler(log, std::move(indexer)), insert(std::move(insert)) {}
 
     void add(StringView key, size_t offset) override {
-        indexed = true;
+        noteKey();
         log.debug("Found key '", key, "'");
         insert.reset()
                 .bindString(":key", key)
@@ -205,7 +237,7 @@ struct NumericHandler : IndexHandler {
         : IndexHandler(log, std::move(indexer)), insert(std::move(insert)) {}
 
     void add(StringView key, size_t offset) override {
-        indexed = true;
+        noteKey();
         auto index = key.begin();
         auto initIndex = key.begin();
         auto indexLength = key.length();
@@ -932,6 +964,8 @@ INSERT INTO LineOffsets VALUES(:line, :offset, :length))");
         log.info("Index building complete; creating line index");
 
         finder.add(window, WindowSize - zs.stream.avail_out, true);
+        for (auto &&pair : indexers)
+            pair.second->finish();
         const auto &lineOffsets = finder.lineOffsets();
         // Skip rows we'd otherwise delete: removing them afterwards leaves the
         // pages on the freelist, so the file would not shrink.
@@ -1010,6 +1044,17 @@ INSERT INTO )" + table + R"( VALUES(:key, :line, :offset)
                     std::unique_ptr<IndexHandler>(new AlphaHandler(
                             log, std::move(indexer), std::move(inserter))));
         }
+        indexers.at(table)->onKeyForLine = [this](uint64_t line) {
+            markIndexed(line);
+        };
+    }
+
+    void markIndexed(uint64_t lineNumber) {
+        if (!sparseLineOffsets_)
+            return;
+        if (indexedLines_.size() <= lineNumber)
+            indexedLines_.resize(lineNumber + 1);
+        indexedLines_[lineNumber] = true;
     }
 
     bool onLine(size_t lineNumber, size_t /*fileOffset*/, const char *line,
@@ -1019,11 +1064,6 @@ INSERT INTO )" + table + R"( VALUES(:key, :line, :offset)
         bool consumed = false;
         for (auto &&pair : indexers) {
             consumed |= pair.second->onLine(lineNumber, line, length);
-        }
-        if (sparseLineOffsets_ && consumed) {
-            if (indexedLines_.size() <= lineNumber)
-                indexedLines_.resize(lineNumber + 1);
-            indexedLines_[lineNumber] = true;
         }
 
         return consumed || saveAllLines_;

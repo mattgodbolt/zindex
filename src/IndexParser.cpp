@@ -4,6 +4,7 @@
 #include "RegExpIndexer.h"
 #include <fstream>
 #include <iostream>
+#include <memory>
 #include <stdexcept>
 
 IndexParser::JsonPtr IndexParser::parseConfig() const {
@@ -97,7 +98,10 @@ void IndexParser::parseIndex(cJSON *index, Index::Builder *builder,
 
         builder->addIndexer(indexName, pipeCommand, config,
                             std::unique_ptr<LineIndexer>(new ExternalIndexer(
-                                    log, pipeCommand, delimiter)));
+                                    log, pipeCommand, delimiter,
+                                    // As for --pipe: --sparse can't wait for
+                                    // a command that buffers its output.
+                                    !config.sparse)));
     } else {
         throw std::runtime_error("unknown index " + type);
     }
