@@ -6,31 +6,30 @@
 #include <iostream>
 #include <stdexcept>
 
-cJSON *IndexParser::parseConfig() const {
+IndexParser::JsonPtr IndexParser::parseConfig() const {
     std::ifstream in(fileName_, std::ifstream::in);
     std::string contents((std::istreambuf_iterator<char>(in)),
                          std::istreambuf_iterator<char>());
-    cJSON *root = cJSON_Parse(contents.c_str());
+    JsonPtr root(cJSON_Parse(contents.c_str()), &cJSON_Delete);
     if (root == nullptr) {
         throw std::runtime_error("Could not parse the json config file. "
                                  "Careful, this is a strict parser.");
     }
-    if (!cJSON_HasObjectItem(root, "indexes")) {
+    if (!cJSON_HasObjectItem(root.get(), "indexes")) {
         throw std::runtime_error("No indexes to be found in the config file.");
     }
     return root;
 }
 
 void IndexParser::checkNames() {
-    cJSON *root = parseConfig();
-    cJSON *indexes = cJSON_GetObjectItem(root, "indexes");
+    auto root = parseConfig();
+    cJSON *indexes = cJSON_GetObjectItem(root.get(), "indexes");
     std::vector<std::pair<std::string, Index::IndexConfig>> specs;
     auto arraySize = cJSON_GetArraySize(indexes);
     for (int i = 0; i < arraySize; i++) {
         auto *index = cJSON_GetArrayItem(indexes, i);
         specs.emplace_back(nameOf(index), configOf(index));
     }
-    cJSON_Delete(root);
     Index::checkIndexNames(specs);
 }
 
@@ -54,8 +53,8 @@ std::string IndexParser::nameOf(cJSON *index) const {
 }
 
 void IndexParser::buildIndexes(Index::Builder *builder, ConsoleLog &log) {
-    cJSON *root = parseConfig();
-    cJSON *indexes = cJSON_GetObjectItem(root, "indexes");
+    auto root = parseConfig();
+    cJSON *indexes = cJSON_GetObjectItem(root.get(), "indexes");
     auto arraySize = cJSON_GetArraySize(indexes);
     for (int i = 0; i < arraySize; i++) {
         parseIndex(cJSON_GetArrayItem(indexes, i), builder, log);

@@ -4,6 +4,7 @@
 #include "Index.h"
 #include "LineIndexer.h"
 #include "cJSON/cJSON.h"
+#include <memory>
 #include <string>
 
 // Parses multiple indexes from a json configuration.
@@ -20,7 +21,8 @@ public:
     void buildIndexes(Index::Builder *builder, ConsoleLog &log);
 
 private:
-    cJSON *parseConfig() const;
+    using JsonPtr = std::unique_ptr<cJSON, decltype(&cJSON_Delete)>;
+    JsonPtr parseConfig() const;
     std::string nameOf(cJSON *index) const;
     Index::IndexConfig configOf(cJSON *index) const;
     void parseIndex(cJSON *index, Index::Builder *builder, ConsoleLog &log);
